@@ -1,0 +1,18 @@
+# 依赖：npm install 重装，不入库
+/node_modules/
+
+# 运行期产物
+/_tmp/
+/data/downloads/
+/data/runtime-tmp.js.bak*
+*.log
+*.session
+*.dat
+
+# 凭据：本仓库**刻意不含**，请用环境变量提供（见 README「管理后台」一节）
+/data/admin-account.json
+/data/admin-token.json
+
+# 抓取原始中间产物（tools/ 重跑会重新生成，体积大）
+/data/_*
+/data/*.bak*

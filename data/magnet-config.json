@@ -1,0 +1,9 @@
+{
+  "port": 6800,
+  "secret": "change-me-39bea4bd4cb4",
+  "dir": "",
+  "maxConcurrent": 5,
+  "maxSpeed": "",
+  "seedTime": 0,
+  "autoLaunch": true
+}

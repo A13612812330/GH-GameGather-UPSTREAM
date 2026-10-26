@@ -1,0 +1,2992 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GameHub 管理后台</title>
+<!-- 内联 favicon：不引外部文件、也不让 /favicon.ico 404 在控制台留一条红 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-size='17' font-family='Segoe UI,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  /* ═══ 设计 token ═══
+   * ★ v10.111 配色回滚（用户口径：「管理页面我要最开始的那种颜色样式」）。
+   *   两个「最开始」要先分清，否则会拿错版本：
+   *     · 配色 —— **v10.88 初版**（`f958d5d`）：浅灰画布 #f4f6f9 + 深灰侧栏 #111827
+   *       + 蓝色 #2563eb。v10.105 换 cream、v10.108 改白，两次都只动颜色没动结构。
+   *     · 骨架 —— 保留 v10.105/v10.108 的成果（浮动侧栏、圆角主区、分节母版、
+   *       矢量图标、19px 页标题）。用户说的是「颜色样式」，不是「布局也退回去」，
+   *       所以 .side/.main 的定位与圆角一个不动，只把色板换掉。
+   * ⚠️ 这里没有回滚整个 admin.html：v10.106~v10.109 在这文件上加了真实功能
+   *   （页面管理并入游戏库、资源管理入口、新游检测入口），整文件回退会静默丢功能。
+   *
+   * 深色侧栏的取值不是凭印象调的，是从 `git show 3d58b19^:public/admin.html` 抄的：
+   *   --side:#111827 / --side2:#1f2937 / 导航字 #cbd5e1 / 激活 #1d4ed8 实底 + 白字 /
+   *   角标 #64748b（激活 #c7d7fe）/ 分组标题 #4b5563 / 底栏 #64748b（b 用 #94a3b8）。
+   * 其中两个值**刻意提亮一档**，因为初版那两个在 #111827 上读不出来（现算对比度）：
+   *   角标    #64748b → #8b95a5（4.1:1 → 6.1:1，角标是数字，必须看清）
+   *   分组标题 #4b5563 → #6c7683（2.5:1 → 3.7:1，10px 大写标签仍保持「淡」的层级感）
+   *
+   * 蓝色主色与陶土色的一条关键差别：
+   *   #2563eb 对白字的对比度是 5.17:1（AA 正文级），所以它**可以做实底 + 白字**；
+   *   陶土 #e79379 只有 2.6:1 才必须拆成 --pri(浅底) / --acc(深一档)。这里合回一个值。
+   *
+   * ⚠️ 本文件仍是零依赖纯 CSS（没有引 Vue/Element/React），只搬视觉口径，不搬框架。 */
+  --canvas:#eef1f6; --bg:#f4f6f9; --card:#ffffff;
+  --line:#e3e8ef; --hairline:#eef1f6; --muted:#f1f5f9;
+  --txt:#1c2330; --sub:#5b6675; --sub2:#8b95a3;
+  --pri:#2563eb; --pri-fg:#fff; --pri-bg:#eff6ff; --pri-line:#bfdbfe; --acc:#2563eb;
+  --ok:#16a34a; --ok-bg:#f0fdf4; --warn:#d97706; --warn-bg:#fffbeb;
+  --dan:#dc2626; --dan-bg:#fef2f2; --chip:#f1f5f9;
+  --side:#111827; --side2:#1f2937; --side-fg:#cbd5e1; --side-muted:#8b95a5;
+  --side-hover:#1f2937; --side-active:#1d4ed8;
+  --sh:0 1px 3px rgba(16,24,40,.08); --sh2:0 12px 40px rgba(16,24,40,.18);
+  --r-sm:6px; --r:10px; --r-lg:14px; --r-xl:16px; --gap:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Inter","Public Sans","Segoe UI","Microsoft YaHei",-apple-system,system-ui,sans-serif;
+  background:var(--canvas);color:var(--txt);font-size:14px;-webkit-font-smoothing:antialiased;
+  height:100dvh;overflow:hidden}
+/* 白底上默认滚动条是浅灰实心块，在长表格里特别扎眼 —— 收成细轨 */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#dcdfe4;border-radius:99px;border:3px solid #fff}
+::-webkit-scrollbar-thumb:hover{background:#c4c9d0}
+::selection{background:rgba(37,99,235,.24)}
+:focus-visible{outline:2px solid var(--pri-line);outline-offset:1px}
+a{color:var(--acc);text-decoration:none}
+button{font-family:inherit}
+
+/* ═══ 骨架：浮动侧栏 + 圆角主区（参考 .layout-root--floating）═══ */
+.shell{display:flex;gap:var(--gap);height:100dvh;padding:var(--gap);overflow:hidden}
+.side{position:relative;flex:none;width:236px;height:calc(100dvh - 2 * var(--gap));
+  background:var(--side);color:var(--side-fg);display:flex;flex-direction:column;
+  border:1px solid var(--side2);border-radius:var(--r-lg);overflow:hidden;z-index:40}
+.brand{display:flex;align-items:center;gap:8px;min-height:36px;margin:12px 0 8px;padding:0 12px}
+.brand .logo{width:20px;height:20px;border-radius:var(--r-sm);flex:none;display:block}
+.brand .bwrap{flex:1;min-width:0}
+.brand b{display:block;font-size:13.5px;font-weight:650;color:var(--side-fg);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;letter-spacing:-.005em}
+.brand span{display:block;color:var(--side-muted);font-size:9.5px;margin-top:3px;letter-spacing:.13em;
+  font-weight:600}
+/* 环境徽标：参考 .env-badge（22px / 999 圆角 / 11px 600）
+   ★ v10.111：侧栏回深色，徽标不能再吃 --muted（浅灰底 + 深字会变成一块白噪点），
+     改成深底浅字（#1f2937 / #94a3b8），与侧栏同为深色系。 */
+.env-badge{flex:none;height:22px;padding:0 8px;border-radius:999px;display:inline-flex;
+  align-items:center;font-size:11px;font-weight:600;letter-spacing:.04em;white-space:nowrap;
+  border:1px solid #334155;background:var(--side2);color:#94a3b8}
+.env-badge.live{border-color:#1d4ed8;background:rgba(37,99,235,.22);color:#c7d7fe}
+.nav{flex:1;overflow-y:auto;padding:0 12px 12px}
+.nav .sec{color:#6c7683;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  padding:0 8px;margin:16px 0 6px;font-weight:700}
+.nav .sec:first-child{margin-top:2px}
+.nav a{display:flex;align-items:center;gap:9px;height:36px;padding:0 10px;margin-bottom:2px;
+  border-radius:8px;color:var(--side-fg);font-size:13.5px;cursor:pointer;
+  transition:background-color .16s,color .16s}
+.nav a i{font-style:normal;width:16px;height:16px;display:grid;place-items:center;flex:none;
+  opacity:.62;transition:opacity .16s}
+/* ★ v10.108：图标由 unicode 字符（▦ ⛃ ◇ ≡ ⇩ ⚙）换成 1.7px 描边矢量。
+   字符图标在不同字体下粗细/基线都不同，一排看过去像拼凑的；矢量跟 currentColor 走，
+   选中态自动变主色。 */
+.nav a svg{width:16px;height:16px;display:block;fill:none;stroke:currentColor;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nav a:hover{background:var(--side-hover);color:#fff}
+.nav a:hover i{opacity:.95}
+/* ★ v10.111：激活态回到初版的「蓝实底 + 白字」（#1d4ed8）。
+   注意 hover 的 color 也跟着改成 #fff 了 —— 深底上留 var(--txt)（#1c2330）
+   会变成深底深字，hover 那一下文字直接消失。 */
+.nav a.on{background:var(--side-active);color:#fff;font-weight:650}
+.nav a.on i{opacity:1}
+/* 左栏条目数角标：右对齐、等宽数字。数字全部由 overview 的 domains 现算（不写死） */
+.nav a .n{margin-left:auto;font-size:11px;color:var(--side-muted);
+  font-variant-numeric:tabular-nums;font-weight:600}
+.nav a.on .n{color:#c7d7fe}
+.side-foot{flex:none;border-top:1px solid var(--side2);padding:12px 16px;
+  font-size:11px;color:var(--side-muted);line-height:1.85;letter-spacing:.01em}
+.side-foot b{color:#94a3b8;font-weight:600}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--r-xl);overflow-y:auto;overflow-x:hidden}
+/* 顶栏 = 参考 .chrome-bar + .navbar（50px 高、card 底、下边框） */
+.top{position:sticky;top:0;z-index:30;flex:none;background:var(--card);
+  border-bottom:1px solid var(--line);padding:13px 26px 12px;display:flex;align-items:center;
+  gap:12px;flex-wrap:wrap}
+/* v10.108 页头：面包屑变**上一行的小标签**（11px 大字距），标题才能放大到 19px。
+   原来两者挤在同一行，标题只能压在 14px —— 那是列表头，不是页标题。 */
+.top h2{font-size:19px;font-weight:650;color:var(--txt);line-height:1.25;letter-spacing:-.015em}
+.top .crumb{color:var(--sub2);font-size:10.5px;display:inline-flex;align-items:center;gap:6px;
+  order:-1;flex-basis:100%;font-weight:600;letter-spacing:.1em;text-transform:uppercase;margin-bottom:-3px}
+.top .crumb::before{display:none}
+.top h2::before{content:none}
+.top .sp{flex:1}
+/* 账号条：参考 .navbar__user（32px 高、999 圆角、card 底） */
+.tk{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
+  border-radius:999px;height:32px;padding:0 6px 0 10px}
+.tk input{width:190px;border:0;background:transparent;font-size:12.5px;
+  font-family:Consolas,monospace;outline:none;color:var(--txt)}
+.tkdot{width:8px;height:8px;border-radius:50%;background:var(--sub2);flex:none}
+.tkdot.on{background:var(--ok)} .tkdot.off{background:var(--dan)}
+
+/* 页签条：参考 .tabs-view / .tab（当前页签底下 2px 主色条） */
+.tabsbar{flex:none;display:flex;align-items:center;gap:4px;padding:0 26px;
+  background:var(--card);border-bottom:1px solid var(--line)}
+.tab{position:relative;height:34px;display:inline-flex;align-items:center;padding:0 2px;
+  margin-right:14px;font-size:12.5px;color:var(--sub2);cursor:default;letter-spacing:.01em}
+.tab.on{color:var(--txt);font-weight:650}
+.tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+  background:var(--pri);border-radius:2px 2px 0 0}
+
+/* 按钮：参考 --radius-md 6px、32px 高 */
+.btn{border:1px solid var(--line);background:var(--card);border-radius:var(--r);
+  height:32px;padding:0 12px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--txt);
+  display:inline-flex;align-items:center;gap:6px;
+  transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s}
+.btn:hover{border-color:var(--pri-line);color:var(--acc);background:var(--pri-bg)}
+.btn:active{transform:translateY(.5px)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--pri-fg);
+  box-shadow:0 1px 2px rgba(37,99,235,.24)}
+.btn.pri:hover{background:#1d4ed8;border-color:#1d4ed8;color:var(--pri-fg)}
+.btn.dan{background:#fff;border-color:#edd6d2;color:var(--dan)}
+.btn.dan:hover{background:var(--dan-bg);border-color:#dfbdb7;color:var(--dan)}
+.btn.sm{height:28px;padding:0 9px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:disabled:hover{border-color:var(--line);color:var(--txt);background:var(--card)}
+
+.view{display:none;padding:26px}
+.view.on{display:block}
+
+/* ═══ 卡片 / 统计 ═══ */
+.grid{display:grid;gap:16px}
+.g6{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg)}
+/* 统计卡：白底 + 细边 + 大数字（boardui 的 .metric-card 形态，无投影） */
+.stat{padding:15px 17px;display:flex;flex-direction:column;gap:2px;
+  transition:border-color .16s,box-shadow .16s}
+.stat:hover{border-color:#d9dce2;box-shadow:var(--sh)}
+.stat span{display:block;font-size:11.5px;color:var(--sub);letter-spacing:.01em}
+.stat b{display:block;font-size:24px;font-weight:600;line-height:1.3;margin-top:4px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat em{font-style:normal;font-size:12px;color:var(--sub);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat.ok b{color:var(--ok)} .stat.warn b{color:var(--warn)} .stat.dan b{color:var(--dan)}
+/* ★ v10.108 面板不再套一层卡片框：白底页面上「框套框」只会让边界打架，
+   改成 recapo 那种**分节**——标题 + 发丝线，内容直接落在页面上。 */
+.panel{background:none;border:0;border-radius:0;margin-top:26px;overflow:visible}
+.panel .ph{padding:0 0 9px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+.panel .ph h3{font-size:13px;font-weight:650;letter-spacing:.01em}
+.panel .ph .sp{flex:1}
+.panel .pb{padding:14px 0 0}
+
+/* 覆盖条 */
+.bar{display:grid;grid-template-columns:150px 1fr 92px;align-items:center;gap:12px;padding:7px 0;font-size:13px}
+.bar .nm{color:var(--txt)}
+.bar .track{height:6px;background:var(--muted);border-radius:999px;overflow:hidden}
+.bar .fill{height:100%;background:linear-gradient(90deg,#93c5fd,#2563eb);border-radius:999px}
+.bar .vv{text-align:right;color:var(--sub);font-variant-numeric:tabular-nums;font-size:12.5px}
+
+/* ═══ 工具行 / 筛选 ═══ */
+.tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+.tools input[type=text]{flex:1 1 260px;max-width:400px;height:32px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--r);font-size:12.5px;outline:none;
+  background:var(--card);color:var(--txt);transition:border-color .15s,box-shadow .15s}
+.tools input[type=text]::placeholder{color:var(--sub2)}
+.tools input[type=text]:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.tools select{height:32px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r);
+  font-size:12.5px;background:var(--card);color:var(--txt);cursor:pointer}
+.tools select:hover{border-color:#d9dce2}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{height:28px;display:inline-flex;align-items:center;padding:0 11px;border-radius:999px;
+  background:var(--chip);font-size:12px;cursor:pointer;border:1px solid transparent;
+  user-select:none;color:var(--sub);transition:background .15s,border-color .15s,color .15s}
+.chip:hover{background:#eceef1;color:var(--txt)}
+.chip.on{background:var(--pri-bg);border-color:var(--pri-line);color:var(--acc);font-weight:650}
+
+/* ═══ 表格（表头用 --muted，参考 --table-header-bg）═══ */
+.tblwrap{overflow:auto;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:var(--muted);text-align:left;font-size:11px;color:#6b7280;
+  font-weight:650;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:2;
+  letter-spacing:.03em}
+td{padding:9px 10px;border-bottom:1px solid var(--hairline);vertical-align:middle}
+tr.row:last-child td{border-bottom:0}
+tr.row:hover{background:#fbfbfc;cursor:pointer}
+/* ★ v10.94：封面必须**完整显示**。原来 38×50 + object-fit:cover 把 Steam header
+   （460×215 横版）左右裁掉大半，只剩中间一条，游戏库里几乎认不出是哪款。
+   改成横向框 + contain：横图竖图都按比例缩放，不裁切，留白用底色补。
+   ⚠️ 别再改回 cover —— cover 只适合「容器比例与图一致」的场景。 */
+.cv{width:66px;height:40px;border-radius:var(--r-sm);object-fit:contain;background:var(--muted);display:block}
+.tt{font-weight:600;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tt small{display:block;font-weight:400;color:var(--sub);font-size:10.5px;
+  font-family:Consolas,monospace;margin-top:1px}
+/* 资源管理表里的「游戏」列：可点开编辑弹窗（资源 → 游戏主键回溯） */
+.lnk{color:var(--acc);cursor:pointer;font-weight:600;border-bottom:1px dashed transparent}
+.lnk:hover{border-bottom-color:var(--acc)}
+.bdg{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:650;
+  white-space:nowrap;border:1px solid transparent}
+.b-hide{background:var(--dan-bg);color:var(--dan)} .b-vis{background:var(--ok-bg);color:var(--ok)}
+.b-cold{background:var(--chip);color:var(--sub);border-color:#e8eaee}
+.b-xd{background:var(--pri-bg);color:var(--acc)} .b-jd{background:#f9f3ec;color:#96612f}
+.b-note{background:var(--warn-bg);color:var(--warn)}
+/* v10.94 同款折叠标记：与「人改」区分开（一个是人工覆盖，一个是同款多帖） */
+.dup{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;font-size:10.5px;
+  font-weight:600;background:var(--pri-bg);color:var(--acc);vertical-align:1px;cursor:help}
+.mut{color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+.pager{display:flex;align-items:center;gap:9px;padding:13px 2px;font-size:12px;color:var(--sub2)}
+.pager .sp{flex:1}
+.empty{padding:44px 10px;text-align:center;color:var(--sub);font-size:13.5px}
+
+/* ═══ v10.103 磁力下载（Komo-Magnet 管理端）═══
+ * 这里的花样只有三样：进度条、任务名两行、状态点。
+ * ★ 不复用首页 .km-dock —— 那是给访客看的浮层（深色、固定右下），
+ *   管理台是表格，硬套会把「下载中」渲染成一块看不清的深色块。 */
+.dlbar{height:6px;background:var(--muted);border-radius:999px;overflow:hidden;min-width:92px}
+.dlbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#93c5fd,#2563eb);
+  border-radius:999px;transition:width .3s}
+.dlbar.done i{background:linear-gradient(90deg,#8fb98a,#5f8d5a)}
+.dlbar.err i{background:linear-gradient(90deg,#e0a3a1,#c23b3b)}
+.dlnm{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.dlnm small{display:block;font-weight:400;color:var(--sub);font-size:10.5px;
+  font-family:Consolas,monospace;margin-top:1px}
+.dlops{display:flex;gap:5px;flex-wrap:wrap}
+.dlcfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}
+.dlcfg .fld{margin:0}
+.dlcfg input[type=text],.dlcfg input[type=number]{width:100%;height:32px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--r);font-size:13px;outline:none;
+  font-family:inherit;background:var(--card);color:var(--txt)}
+.dlcfg input:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+/* 下拉沿用同一套边框/高度：不写这条会掉回浏览器默认的灰白控件，一看就不是同一套皮 */
+.dlcfg select{width:100%;height:32px;padding:0 8px;border:1px solid var(--line);
+  border-radius:var(--r);font-size:13px;background:var(--card);color:var(--txt)}
+.dlcfg .hint{font-size:11.5px;color:var(--sub2);margin-top:4px}
+/* 未接入 / 已连接提示条：颜色就是结论，不靠文字又说一遍 */
+.dlnote{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;border-radius:var(--r-lg);
+  background:var(--warn-bg);border:1px solid #f2e2c8;color:#8a5a17;font-size:12.5px;line-height:1.8}
+.dlnote.ok{background:var(--ok-bg);border-color:#d8e9dc;color:#3f6b4a}
+.dlnote b{color:inherit;font-weight:700}
+.dlnote .sp{flex:1}
+.sd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--sub2);
+  flex:none;margin-right:6px;vertical-align:1px}
+.sd.on{background:var(--ok)} .sd.off{background:var(--dan)}
+
+/* ═══ 弹窗 ═══ */
+.mask{position:fixed;inset:0;background:rgba(16,17,20,.38);backdrop-filter:blur(3px);
+  display:none;align-items:flex-start;justify-content:center;padding:44px 16px;z-index:60;overflow:auto}
+.mask.on{display:flex}
+.modal{background:var(--card);border:1px solid var(--line);border-radius:var(--r-xl);
+  box-shadow:var(--sh2);width:100%;max-width:980px;overflow:hidden;
+  animation:pop .16s ease-out}
+.modal.sm{max-width:430px}
+@supports (backdrop-filter:blur(1px)){.mask.on{backdrop-filter:blur(4px)}}
+.acct{font-size:12.5px;font-weight:600;color:var(--txt);max-width:130px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+@keyframes pop{from{transform:translateY(10px);opacity:.6}to{transform:none;opacity:1}}
+.mh{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+/* 弹窗头封面：同样 contain（横版 header 不被裁），点一下看原图 */
+.mh img{width:76px;height:44px;border-radius:var(--r);object-fit:contain;background:var(--muted);cursor:zoom-in}
+.mh h3{font-size:15.5px;line-height:1.35;font-weight:600}
+.mh .meta{color:var(--sub);font-size:12px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mh .sp{flex:1}
+.mclose{border:0;background:transparent;font-size:20px;line-height:1;color:var(--sub2);
+  cursor:pointer;padding:2px 4px}
+.mclose:hover{color:var(--dan)}
+.mb{display:grid;grid-template-columns:1fr 340px;gap:0}
+.mcol{padding:16px 18px}
+.mcol+.mcol{border-left:1px solid var(--line);background:var(--muted)}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px;font-weight:600}
+.fld textarea{width:100%;min-height:84px;resize:vertical;padding:9px 11px;border:1px solid var(--line);
+  border-radius:var(--r);font:13px/1.6 inherit;outline:none;background:var(--card);color:var(--txt)}
+.fld textarea:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.fld .hint{font-size:11.5px;color:var(--sub2);margin-top:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{border:0;background:var(--card);height:28px;padding:0 12px;font-size:12.5px;
+  cursor:pointer;color:var(--sub)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--pri-bg);color:var(--acc);font-weight:600}
+.kv{font-size:12.5px;line-height:1.95}
+.kv i{font-style:normal;color:var(--sub);display:inline-block;min-width:74px}
+.kv b{font-weight:600}
+/* ═══ v10.97 条目查看弹窗（模块页「查看」）═══
+ * ★ 为什么要重做（用户口径：给了一张帖子详情页截图，「管理页面点击后的弹窗我想要也这样的」）：
+ *   v10.94 那版把正文塞进一个灰底 <pre>，再把字段/链接堆在下面 —— 能读，但像**日志**。
+ *   而机地帖的价值恰恰在正文本身（网盘口令、安装步骤、前置依赖），
+ *   参照的样子是**一篇文章**：大封面 → 板块/作者/时间/浏览 → 原链 → 分节正文。
+ * ★ 正文渲染是「有损但可控」的：只认三类结构（小节标题 / 编号步骤 / 段落），
+ *   其余一律按段落走。**不做 markdown 全解析** —— 帖子正文不是 markdown，
+ *   硬套会吃掉它自己的排版符号（`➡️`、`【】`、行内 emoji 都是作者刻意打的）。
+ * ⚠️ 每个用户输入片段都必须过 esc()；链接先切分再分别转义（见 rmvInline）。 */
+.rmv{max-width:720px;display:flex;flex-direction:column;max-height:calc(100vh - 88px)}
+.rmv-hd{display:flex;align-items:flex-start;gap:10px;padding:14px 18px 11px}
+.rmv-ico{flex:none;width:22px;height:22px;border-radius:var(--r-sm);background:var(--pri-bg);
+  color:var(--acc);display:grid;place-items:center;margin-top:1px}
+.rmv-ico svg{width:13px;height:13px;display:block}
+.rmv-hd .t{flex:1;min-width:0}
+.rmv-hd h3{font-size:14.5px;line-height:1.45;font-weight:700;color:var(--txt);word-break:break-word}
+.rmv-sub{font-size:11.5px;color:var(--sub);margin-top:3px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.rmv-scroll{padding:0 18px 16px;overflow:auto;flex:1}
+.rmv-hero{border-radius:var(--r-lg);overflow:hidden;background:var(--muted);margin:2px 0 12px}
+.rmv-hero img{width:100%;max-height:270px;object-fit:cover;display:block}
+.rmv-chips{display:flex;flex-wrap:wrap;gap:7px;align-items:center;font-size:11.5px;color:#4a4842;margin-bottom:9px}
+.rmv-chips .k{color:var(--sub2)}
+.rmv-chips .dot{color:var(--line)}
+.rmv-chips b{font-weight:600;color:var(--txt)}
+.rmv-chip{background:var(--pri-bg);color:var(--acc);border-radius:var(--r-sm);padding:2px 8px;font-weight:700}
+.rmv-url{display:block;font:11.8px/1.6 Consolas,monospace;color:var(--acc);word-break:break-all;margin-bottom:12px}
+.rmv-url:hover{text-decoration:underline}
+.rmv-doc{font-size:13px;line-height:1.9;color:var(--txt);word-break:break-word}
+.rmv-doc h5{font-size:12.5px;font-weight:700;color:var(--txt);margin:15px 0 5px}
+.rmv-doc h5:first-child{margin-top:0}
+.rmv-doc p{margin:0 0 7px}
+.rmv-doc .li{display:flex;gap:7px;margin:0 0 4px;padding-left:2px}
+.rmv-doc .li i{flex:none;font-style:normal;color:var(--sub2);font-variant-numeric:tabular-nums}
+.rmv-doc a{color:var(--acc);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
+.rmv-doc b{font-weight:700;color:var(--txt)}
+.rmv-shots{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0 14px}
+.rmv-shots a{display:block;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--muted)}
+.rmv-shots img{width:100%;height:74px;object-fit:cover;display:block}
+.rmv-sec{margin-top:15px;border-top:1px solid var(--line);padding-top:12px}
+.rmv-sec>h4{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:7px;letter-spacing:.03em}
+.rmv-pre{white-space:pre-wrap;word-break:break-word;font:12.8px/1.78 inherit;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 14px;max-height:44vh;overflow:auto}
+.rmv-pre.empty{color:var(--sub2)}
+.rmv-links{display:flex;flex-direction:column;gap:6px}
+.rmv-l{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:var(--r);
+  padding:8px 11px;font-size:12.5px;background:var(--card)}
+.rmv-l .k{flex:none;font-size:11px;color:#4a4842;background:var(--chip);border-radius:999px;padding:1px 8px}
+.rmv-l a{color:var(--acc);word-break:break-all;text-decoration:none;font-weight:600}
+.rmv-l a:hover{text-decoration:underline}
+.rgrp{margin-bottom:10px}
+.rgrp h4{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.rgrp h4 em{font-style:normal;background:var(--chip);color:#4a4842;border-radius:var(--r-sm);padding:0 6px;font-size:11px}
+.rlist{display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto}
+.ritem{font-size:12.5px;line-height:1.45;display:flex;gap:6px;align-items:baseline}
+.ritem a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ritem span{color:var(--sub2);font-size:11px;flex:none}
+.mf{display:flex;gap:9px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);background:var(--bg)}
+.mf .sp{flex:1}
+.mf .stat-line{font-size:12px;color:var(--sub)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);
+  background:var(--txt);color:#fff;padding:9px 16px;border-radius:var(--r-lg);font-size:13px;
+  opacity:0;transition:.2s;z-index:99;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 日志表 */
+.log-row{display:grid;grid-template-columns:150px 1fr 66px 90px;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--hairline);font-size:12.5px;align-items:center}
+.log-row:last-child{border-bottom:0}
+.log-row .t{color:var(--sub);font-variant-numeric:tabular-nums;font-size:11.5px}
+.code{font-family:Consolas,monospace;font-size:11.5px;background:var(--chip);border-radius:var(--r-sm);padding:1px 6px}
+
+/* ═══ v10.90 固定行高列表（页面管理 / 游戏库共用） ═══
+ * 用户口径「固定每一行的高度」：行高钉在 56px，图片 42px，标题单行省略。
+ * 为什么不用 min-height：内容长短不一时 min-height 会被撑开（长标题换行 ⇒ 行高跳动），
+ * 表格看起来像被随机拉伸；height + overflow:hidden 才是真的等高。 */
+/* v10.106：弹窗内的形态页签 —— 与列表上方的 .chip 不是一套东西：
+   这里切换的是**同一份数据的不同视角**，不是筛选条件，所以做成下划线页签。 */
+  /* v10.106：行尾只有一个「编辑」，它不能被列宽挤成两行（两字竖排看着像坏了） */
+  .fxrow td .btn{white-space:nowrap}
+  /* v10.107：模块页操作列里的按钮/链接一律不许折行（折了就成了一坨两行文字） */
+  #rmRows td:last-child{white-space:nowrap}
+  /* v10.106：「20 小时前」在 94px 里会被折成两行；相对时间是**一个值**，不该断 */
+  .fxrow td.mut{white-space:nowrap}
+  .cold-ic{margin-left:5px;font-size:11px;vertical-align:1px}
+  /* v10.106：弹窗里的按钮（预览 / 保存）也不能被挤成两字竖排 */
+  .modal .btn{white-space:nowrap}
+  .pftabs{display:flex;gap:14px;margin-top:6px}
+  .pftab{font-size:12px;font-weight:650;color:var(--sub);cursor:pointer;
+    padding:2px 0 4px;border-bottom:2px solid transparent}
+  .pftab:hover{color:var(--txt)}
+  .pftab.on{color:var(--acc);border-bottom-color:var(--acc)}
+  .fxrow td{height:56px;padding:4px 10px;overflow:hidden}
+.fxrow .cv{width:64px;height:42px;border-radius:var(--r)}
+.fxrow .tt{max-width:430px}
+/* ★ v10.107：模块页「游戏（主键）」列把 id 直接拼在标题后面 —— 行内 <small> 没有样式，
+   渲染成「使命召唤7/Call of Duty4xd-237」，读起来像标题本身的一部分。
+   id 是**核对用的**：该另起一行、等宽、弱化，但必须看得见。 */
+/* 标题限一行、超出打点（原来长标题折两三行，整张表行高参差）；
+   id 是 <small> 且是 .lnk 的**兄弟节点**（不是子节点）—— 按兄弟选，别再写错层级。 */
+.fxrow .lnk{display:block;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fxrow td > small{display:block;font-weight:400;font-size:11px;color:var(--sub2);
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;margin-top:1px}
+.idcol{font-family:Consolas,monospace;font-size:11.5px;color:var(--sub);white-space:nowrap}
+
+/* 页码条：可输入跳转 + 附近页 */
+.pgbar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pgbar .sp{flex:1}
+.pgbar input{width:58px;height:28px;padding:0 6px;border:1px solid var(--line);border-radius:var(--r);
+  font-size:12.5px;text-align:center;outline:none;font-variant-numeric:tabular-nums;
+  background:var(--card);color:var(--txt)}
+.pgbar input:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.pgn{min-width:29px;height:28px;padding:0 7px;border:1px solid var(--line);background:var(--card);
+  border-radius:var(--r);font-size:12.5px;cursor:pointer;color:var(--txt);
+  font-variant-numeric:tabular-nums}
+.pgn:hover{border-color:var(--pri);color:var(--acc)}
+.pgn.on{background:var(--acc);border-color:var(--acc);color:var(--pri-fg);font-weight:700}
+.pgdot{color:var(--sub2);padding:0 1px}
+
+/* 表单输入（资料弹窗） */
+.fld input[type=text],.fld input[type=number],.fld input[type=date],.fld input[type=password]{
+  width:100%;height:32px;padding:0 11px;border:1px solid var(--line);border-radius:var(--r);
+  font:13px/1.5 inherit;outline:none;background:var(--card);color:var(--txt)}
+.fld input:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.fld .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fld .ln{display:flex;gap:6px;align-items:center}
+/* 资料完整度计量条：宽 30px、高 3px，条长 = 填了几项 / 7 */
+.cmp{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub2);
+  font-variant-numeric:tabular-nums;font-weight:600}
+.cmp i{width:30px;height:3px;border-radius:99px;background:#e9ecf0;overflow:hidden;display:block;
+  position:relative;flex:none}
+.cmp i::after{content:"";position:absolute;left:0;top:0;bottom:0;
+  width:calc(var(--n,0) / 7 * 100%);background:var(--sub2);border-radius:99px}
+/* ★ v10.109 新游检测：行内「入库」是**描边**而非实底（见 ngRow 的注释）。
+   悬停才给主色 —— 一屏几十行的列表里，实底按钮会互相稀释。 */
+.btn.ng-go{border-color:var(--line);color:var(--sub)}
+.btn.ng-go:hover{border-color:var(--pri);color:var(--acc);background:#fff}
+.cmp.mid i::after{background:var(--warn)} .cmp.mid b{color:var(--warn)}
+.cmp.zero i::after{background:var(--dan)} .cmp.zero b{color:var(--dan)}
+.cmp.hi i::after{background:var(--ok)} .cmp.hi b{color:var(--sub)}
+.cmp b{font-weight:600}
+.ovr{display:inline-block;font-size:10px;color:var(--warn);background:var(--warn-bg);
+  border-radius:var(--r-sm);padding:0 5px;margin-left:5px;vertical-align:1.5px;font-weight:700}
+
+/* 鉴权横幅：未登录 / 会话失效时说人话（原来只给一张空表） */
+.authbar{display:none;align-items:center;gap:9px;background:var(--dan-bg);border:1px solid #f0d6d2;
+  color:var(--dan);border-radius:var(--r-lg);padding:9px 13px;font-size:12.5px;margin:14px 26px 0}
+.authbar.on{display:flex}
+.authbar .sp{flex:1}
+
+/* 资源覆盖：按模块分类的卡片 */
+/* ★ v10.108：四张模块卡原来按 minmax(340px) 排，常见宽度下排成 3+1 —— 第二行只剩一张、
+   右边空一大片。auto-fit 在 1030~1180 这个区间永远给 3 列，所以改成**显式列数**：
+   宽屏 4 列一行、中屏 2×2、窄屏 1 列，不再出现「三缺一」。 */
+.mgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+@media (max-width:1200px){.mgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:820px){.mgrid{grid-template-columns:1fr}}
+.mcard{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card);padding:15px 17px;
+  transition:border-color .16s,box-shadow .16s}
+.mcard:hover{border-color:#d9dce2;box-shadow:var(--sh)}
+.mcard .hd{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.mcard .hd b{font-size:13.5px;font-weight:650;display:inline-flex;align-items:center;gap:7px}
+/* 图标做成一枚浅底小方块（boardui 的图标容器形态），比裸字符稳、也比裸字符轻 */
+.mcard .mico{width:22px;height:22px;border-radius:6px;background:var(--muted);color:var(--sub);
+  display:inline-grid;place-items:center;flex:none}
+.mcard .mico svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.mcard .hd em{font-style:normal;font-size:11.5px;color:var(--sub);font-variant-numeric:tabular-nums}
+.mcard .miss{margin-top:9px;border-top:1px dashed var(--line);padding-top:7px}
+.miss-item{display:flex;align-items:center;gap:8px;padding:2px 0;font-size:12px;min-width:0}
+.miss-item img{width:24px;height:24px;border-radius:var(--r-sm);object-fit:cover;background:var(--muted);flex:none}
+.miss-item .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 模块子源切换条 */
+.mtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+/* ★ v10.107 一级页签（模块）：比二级（子源）重一档 —— 底色 + 2px 下划线，
+   两级页签长得一样的话，用户不知道自己在切「模块」还是切「源」。 */
+.modtabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;
+  border-bottom:1px solid var(--line);padding-bottom:0}
+.mtab.mod{height:34px;border:0;border-bottom:2px solid transparent;border-radius:0;
+  background:none;padding:0 12px;margin-bottom:-1px;font-size:13px}
+.mtab.mod:hover{background:var(--pri-bg);border-bottom-color:var(--pri-line)}
+.mtab.mod.on{background:none;border-bottom-color:var(--acc);color:var(--fg);font-weight:700}
+.mtab.mod .cnt{font-style:normal;font-weight:600;font-size:11px;margin-left:6px;
+  padding:1px 5px;border-radius:999px;background:var(--pri-bg);color:var(--sub);
+  border:1px solid var(--line)}
+.mtab.mod.on .cnt{background:var(--card);color:var(--acc);border-color:var(--pri-line)}
+.mtab{height:30px;display:inline-flex;align-items:center;padding:0 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card);font-size:12px;cursor:pointer;color:var(--sub);
+  transition:border-color .15s,color .15s,background .15s}
+.mtab:hover{border-color:var(--pri-line);color:var(--acc);background:var(--pri-bg)}
+.mtab.on{background:var(--pri-bg);border-color:var(--pri-line);color:var(--acc);font-weight:700}
+
+@media (max-width:900px){
+  body{height:auto;overflow:auto}
+  .shell{flex-direction:column;height:auto;padding:8px;gap:8px}
+  .side{width:100%;height:auto;flex-direction:row;align-items:center;overflow-x:auto;border-radius:var(--r-lg)}
+  .brand{margin:0;padding:10px 12px;white-space:nowrap}
+  .nav{display:flex;gap:4px;padding:8px;overflow-x:auto;overflow-y:hidden}
+  .nav a{height:34px;white-space:nowrap;margin-bottom:0}
+  .nav .sec,.side-foot,.brand span,.env-badge{display:none}
+  .main{border-radius:var(--r-lg);overflow:visible}
+  .top{border-radius:var(--r-lg) var(--r-lg) 0 0;padding:11px 14px 10px}
+  .top h2{font-size:16px}
+  .tabsbar{padding:0 14px}
+  .view{padding:14px}
+  .authbar{margin:10px 14px 0}
+  .mb{grid-template-columns:1fr}
+  .mcol+.mcol{border-left:0;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <!-- ★ v10.105 视觉对齐参考站（`仪表盘 · GameHub 后台管理`，cream 主题）：
+         品牌行 = 20px logo + 标题/副标 + 环境徽标，尺寸取自该站 .sider-brand / .env-badge。 -->
+    <div class="brand">
+      <img class="logo" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Segoe UI,sans-serif' font-weight='700' fill='%23fff' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+      <div class="bwrap">
+        <b>GameHub 管理后台</b>
+        <span>LIBRARY CONSOLE</span>
+      </div>
+      <span class="env-badge" id="envBadge">本机</span>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="sec">总览</div>
+      <a data-v="dash" class="on"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg></i>仪表盘</a>
+      <!-- ★ v10.106：「页面管理」与「游戏库」合并成**一个游戏库**。
+           两者查的是同一个端点（/api/library/browse），差别只有两处：
+           同款折不折叠、列表里露不露「资料完整度」—— 同一张表看两遍。
+           用户口径：「页面管理跟游戏库应该是一样的，合并成游戏库」。
+           ⇒ 折叠改成页内开关（⧉ 同款合并，默认开），爬取字段的入口
+             保留在每行的「条目」按钮上。 -->
+      <div class="sec">内容</div>
+      <a data-v="games"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z"/><path d="M3.5 12.2 12 16.7l8.5-4.5"/><path d="M3.5 16.6 12 21l8.5-4.4"/></svg></i>游戏库<b class="n" id="nGame">—</b></a>
+      <!-- ★ v10.109：新游检测（用户需求 ④）。角标是**待处理候选数**，
+           扫完不处理会一直挂着 —— 它要表达的是「有一批东西等你决定」。 -->
+      <a data-v="new"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.4"/><path d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20"/></svg></i>新游检测<b class="n" id="nNew">—</b></a>
+      <!-- ★ v10.90：模块只剩四类（本体 / MOD / 修改器 / 存档）。
+           原来 FitGirl 与 Thunderstore 各占一个侧栏条目 ⇒ 侧栏七条资源 + 两个运维，
+           用户口径「页面管理有点乱」。它们本质是**本体**与**MOD**的一个来源，
+           收进模块后由页内的「子源」切换条区分（不影响分页语义，见 RM 注释）。 -->
+      <!-- ★ v10.107：四个模块收成**一个「资源管理」入口**。
+           它们本来就共用 `#view-resm` 一个 section、一套渲染器，侧栏四扇门通向同一个房间，
+           换的只是 `rmMod` 一个变量 —— 四扇门是纯重复（用户口径：「参考站的资源是一个
+           资源管理入口，要不要也收成一个」→ 可以）。
+           现在：侧栏一扇门 → 页内一级页签选模块 → 二级页签选子源。
+           ★ 侧栏**不挂数字角标**：四个模块口径不同（帖子数 / 包数 / 存档项），
+             加起来的数没有意义。真实数字挂在各自页签上。
+           ★ 老链接 #m-base / #m-mod / #m-trainer / #m-save 仍有效（HASH_ALIAS 别名）。 -->
+      <!-- ★ v10.108：原来这里还有第二行 `<div class="sec">内容</div>`（v10.107 把四扇门
+           收成一扇时，只删了条目、没删分组标题）⇒ 侧栏出现「内容 / 游戏库 / 内容 / 资源管理」
+           两个同名小标题。分组标题是**一次分组**，不是每项一个。 -->
+      <a data-v="rm"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="4.2" rx="1.2"/><path d="M5 8.4V19a1.4 1.4 0 0 0 1.4 1.4h11.2A1.4 1.4 0 0 0 19 19V8.4"/><path d="M10 12.2h4"/></svg></i>资源管理</a>
+      <div class="sec">运维</div>
+      <a data-v="res"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6V12h8.4"/></svg></i>覆盖与缺口</a>
+      <a data-v="log"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 6.5h12M8.5 12h12M8.5 17.5h12"/><circle cx="4.2" cy="6.5" r="1.1"/><circle cx="4.2" cy="12" r="1.1"/><circle cx="4.2" cy="17.5" r="1.1"/></svg></i>操作日志</a>
+      <!-- ★ v10.103：磁力下载（Komo-Magnet）管理入口。
+           角标是「活动 + 等待」任务数，连不上工具时显示「—」而不是 0 ——
+           0 会被读成「工具在跑、只是没任务」，与「根本没装」是两件事。 -->
+      <a data-v="dl"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8v10.4"/><path d="m7.6 10.2 4.4 4.4 4.4-4.4"/><path d="M4.8 20.2h14.4"/></svg></i>磁力下载<b class="n" id="nDl">—</b></a>
+      <a data-v="set"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.2h8.6M17.4 7.2H20M4 16.8h3.6M12.4 16.8H20"/><circle cx="15" cy="7.2" r="2.4"/><circle cx="10" cy="16.8" r="2.4"/></svg></i>设置</a>
+    </nav>
+    <div class="side-foot">
+      <div>线上 <b id="fLive">—</b></div>
+      <div>备注 <b id="fNotes">0</b> 条</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h2 id="vTitle">仪表盘</h2>
+      <span class="crumb" id="vCrumb">总览 / 数据健康</span>
+      <span class="sp"></span>
+      <!-- ★ v10.91：令牌条 → 账号条。
+           用户口径：「为什么要令牌，不如直接给我一个管理员账号」——
+           令牌的问题是难记、难查、填错只得到一张空表；账号密码才是人用的东西。
+           令牌通道没有删，退化到登录弹窗里的「用令牌登录」（脚本仍走它）。 -->
+      <div class="tk" id="acctBar" title="管理员账号（本机直连免登录）">
+        <span class="tkdot off" id="tkDot"></span>
+        <span class="acct" id="acctName">未登录</span>
+        <button class="btn sm" id="acctBtn" onclick="acctAction()">登录</button>
+      </div>
+      <a class="btn sm" href="/" target="_blank" rel="noopener">打开主站 ↗</a>
+    </header>
+
+    <!-- ★ v10.105 页签条：参考站 .tabs-view / .tab（当前页签下面 2px 主色条）。
+         管理台是单页 hash 路由，不是多开页签 ⇒ 这里只显示**当前页**一签，
+         作用是把「现在在哪个视图」做成视觉锚点，不假装能关能多开。
+         文案由 go() 现写，不在这里写死。 -->
+    <div class="tabsbar" id="tabsBar"><span class="tab on" id="vTab">仪表盘</span></div>
+
+    <!-- ★ v10.90 鉴权横幅：未登录/失效时在**内容区**说清楚，
+         而不是只把表格留空（原来的表现是「填了令牌还是什么都没有」）。 -->
+    <div class="authbar" id="authBar">
+      <b>未登录</b><span id="authMsg">线上需要管理员账号才能看管理数据。</span>
+      <span class="sp"></span>
+      <button class="btn sm" onclick="openLogin()">登录</button>
+    </div>
+
+    <!-- ═══ 仪表盘（爬虫可视化 · 分模块）═══
+         用户口径「仪表盘主要用于管理爬虫可视化，且分模块查看」⇒ 顶部一排模块 chip，
+         选「总览」时四张模块卡全出，选具体模块只留那一张（其余数据不再请求）。 -->
+    <section class="view on" id="view-dash">
+      <div class="tools">
+        <div class="chips" id="dashChips"></div>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="dashInfo">—</span>
+      </div>
+      <div class="grid g6" id="stats"></div>
+      <div class="mgrid" id="dashMods" style="margin-top:13px"></div>
+      <div class="panel">
+        <div class="ph"><h3>库构成与冷门口径</h3><span class="sp"></span><span class="mut" id="dashBuilt">—</span></div>
+        <div class="pb">
+          <div class="bar"><div class="nm">可见（列表展示）</div><div class="track"><div class="fill" id="barVis"></div></div><div class="vv" id="vvVis">—</div></div>
+          <div class="bar"><div class="nm">冷门隐藏</div><div class="track"><div class="fill" id="barHide" style="background:linear-gradient(90deg,#fca5a5,#dc2626)"></div></div><div class="vv" id="vvHide">—</div></div>
+          <div class="bar"><div class="nm">热启动保护</div><div class="track"><div class="fill" id="barRecent" style="background:linear-gradient(90deg,#fcd34d,#d97706)"></div></div><div class="vv" id="vvRecent">—</div></div>
+          <div class="mut" style="margin-top:9px">口径：hot=0 · 非近 90 天新游 · <b>且无 MOD/修改器/存档</b> · 现算不落名单 · 搜索与详情不受影响（可搜到、详情可达）</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h3>数据源健康</h3><span class="sp"></span><span class="mut">来自各源 stats()</span></div>
+        <div class="pb" id="srcHealth"></div>
+      </div>
+    </section>
+
+    <!-- ═══ 游戏库（原「页面管理 + 游戏库」）═══
+         ★ v10.106 合并：一个菜单、一张表、两种看数据的方式。
+           · ⧉ 同款合并（默认开）—— 打开时同款多帖折成一行（原「游戏库」）；
+             关掉就是逐条帖子（原「页面管理」）。两者只差 `group=1` 这一个参数。
+           · 资料列 = 简介/类型/厂商/发行/发售日/别名/封面 7 项里填了几项。
+           · 每行两个入口：**资料**（人工覆盖字段）/ **条目**（爬回来的原始字段），
+             写同一份覆盖文件的不同字段，互不覆盖。 -->
+    <section class="view" id="view-games">
+      <div class="tools">
+        <input type="text" id="q" placeholder="搜索标题 / 别名 / id（回车搜索）">
+        <button class="btn pri" onclick="applySearch()">搜索</button>
+        <select id="fHide" onchange="reload()">
+          <option value="">全部状态</option>
+          <option value="0">仅可见</option>
+          <option value="1">仅隐藏</option>
+        </select>
+        <select id="fSrc" onchange="reload()">
+          <option value="">全部来源</option>
+          <option value="xd">XDGAME</option>
+          <option value="jidi">机地</option>
+        </select>
+        <select id="fSort" onchange="reload()">
+          <option value="updated">按更新时间</option>
+          <option value="hot">按热度</option>
+          <option value="score">按推荐分</option>
+          <option value="title">按标题</option>
+        </select>
+        <div class="chips">
+          <span class="chip on" id="cGroup" onclick="toggleGroup()"
+                title="关掉就逐条列帖子（原「页面管理」的视角）">⧉ 同款合并</span>
+          <span class="chip" id="cNote" onclick="toggleNote()">⭐ 只看有备注</span>
+          <span class="chip" id="cCold" onclick="toggleCold()">🌙 显示冷门</span>
+        </div>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="gInfo">—</span>
+        <button class="btn sm" onclick="reload()">刷新</button>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:58px">封面</th>
+            <th>游戏名</th>
+            <th style="width:132px">游戏ID</th>
+            <th style="width:84px">平台</th>
+            <th style="width:60px">评分</th>
+            <th style="width:94px">更新</th>
+            <th style="width:62px">资料</th>
+            <th style="width:96px">状态</th>
+            <th style="width:96px">备注</th>
+            <th style="width:76px">操作</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty" id="rowsEmpty" style="display:none">没有符合条件的游戏</div>
+      </div>
+      <div class="pager pgbar" id="gPgBar"></div>
+    </section>
+
+    <!-- ═══ 新游检测（v10.109 · 用户需求 ④）═══
+         用户口径：「遇到新游戏则在这里，我来决定是入库」。
+         ★ 与「游戏库」的根本差别：**扫描不写库**。这里只做「源站有 / 库里没有」的比对，
+           写入只发生在用户点「入库」那一刻 —— 所以这一页是**决策台**，不是另一个列表。
+         ★ 三个状态就是三种结局：待处理（等你决定）/ 已入库（已进库并强制可见）/ 已忽略
+           （记下来，之后扫描不再列出来）。 -->
+    <section class="view" id="view-new">
+      <div class="tools">
+        <select id="nStatus" onchange="ngStatus=this.value;newReload(true)">
+          <option value="pending">待处理</option>
+          <option value="admitted">已入库</option>
+          <option value="ignored">已忽略</option>
+          <option value="all">全部</option>
+        </select>
+        <input type="text" id="nq" placeholder="搜索标题 / id（回车搜索）" onkeydown="if(event.key==='Enter')newReload(true)">
+        <button class="btn pri" id="nScanBtn" onclick="newScan()">扫描源站</button>
+        <select id="nScanPages" title="扫源站最近几页（每页约 35 条）">
+          <option value="1">最近 1 页</option>
+          <option value="3" selected>最近 3 页</option>
+          <option value="5">最近 5 页</option>
+          <option value="10">最近 10 页</option>
+        </select>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="nInfo">—</span>
+        <button class="btn sm" onclick="newReload()">刷新</button>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:58px">封面</th>
+            <th>游戏名</th>
+            <th style="width:118px">游戏ID</th>
+            <th style="width:60px">评分</th>
+            <th style="width:84px">容量</th>
+            <th style="width:100px">上架 / 更新</th>
+            <th style="width:104px">首次发现</th>
+            <th style="width:146px">操作</th>
+          </tr></thead>
+          <tbody id="newRows"></tbody>
+        </table>
+        <div class="empty" id="newEmpty" style="display:none">暂无候选</div>
+      </div>
+      <div class="pager pgbar" id="newPgBar"></div>
+    </section>
+
+    <!-- ═══ 资源管理（六个域共用这一个壳，列定义 / 数据源 / 动作按 kind 现算）═══
+    <!-- ═══ 资源管理（四个模块共用这一个壳，子源 / 列定义由 RM 现算）═══
+         为什么四类共用一个 section：骨架完全一样（工具栏 + 子源切换 + 表格 + 分页），
+         差别只在「子源列表 + 列定义 + 取数端点」。四份近乎相同的 HTML 会立刻漂移。
+         ★ 为什么子源不做「全部合并」一档：两个源的字段与排序键都不同
+           （MOD 帖按 pv、Thunderstore 按 downloads），合并后只能客户端拼接，
+           分页语义会失真（第 2 页的 50 条不是全局第 51–100 条）。宁可不给这一档。 -->
+    <section class="view" id="view-resm">
+      <!-- ★ v10.107：两级页签。一级 = 模块（本体/MOD/修改器/存档，带各自条目数），
+           二级 = 该模块下的子源。以前一级在侧栏、二级在页内，切模块要跨两处操作。 -->
+      <div class="modtabs" id="rmModTabs"></div>
+      <div class="mtabs" id="rmTabs"></div>
+      <div class="tools">
+        <input type="text" id="rq" placeholder="搜索条目 / 游戏名 / 包名（回车搜索）">
+        <button class="btn pri" onclick="resmSearch()">搜索</button>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="rmHint"></span>
+        <button class="btn sm" onclick="resmReload()">刷新</button>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr id="rmHead"></tr></thead>
+          <tbody id="rmRows"></tbody>
+        </table>
+        <div class="empty" id="rmEmpty" style="display:none">没有符合条件的条目</div>
+      </div>
+      <div class="pager pgbar" id="rmPgBar"></div>
+    </section>
+
+    <!-- ═══ 资源覆盖（按模块分类看）═══
+         用户口径：「资源覆盖我想分类查看而不是单一查看数据源」⇒ 一张模块卡一片区域，
+         卡内列子源命中率，卡下列「这一模块一款都没有」的游戏（可点进游戏库）。
+         比原来七根条多的信息是**缺口清单** —— 那才是能直接安排抓取工作的东西。 -->
+    <section class="view" id="view-res">
+      <div class="tools">
+        <div class="chips" id="resChips"></div>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="resInfo">—</span>
+        <button class="btn sm" onclick="loadRes()">刷新</button>
+      </div>
+      <div class="mgrid" id="resCards"></div>
+      <div class="panel">
+        <div class="ph"><h3>口径说明</h3></div>
+        <div class="pb mut" style="line-height:1.9">
+          · <b>分母</b>是端游库全量（含被隐藏的冷门条目）—— 冷门不等于没有资源，用它当分母才看得见长尾缺口。<br>
+          · <b>命中</b>按各源自己的索引现算（FitGirl 的 byGame / Thunderstore 的 libId / 机地聚合层的 libIds），不逐款反查。<br>
+          · <b>缺口</b>= 该模块所有子源都没命中过的游戏，按热度降序取前 30 条。
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 磁力下载（v10.103 · Komo-Magnet 管理端）═══
+         三层分工固定下来：**本页 = 看与管理**，**服务端 = 存配置**，**Komo-Magnet = 真正下载**。
+         为什么工具必须是本机程序：浏览器插件拿不到磁盘写权限、关标签页就断，几十 GB 的
+         repack 下不完；插件只能做唤起与探测，下载器必须在本机。
+         ★★ 探活与任务控制由**浏览器**直连 http://127.0.0.1:68xx/jsonrpc ——
+            不经服务端代理：线上打开管理页时，服务端的 127.0.0.1 是容器，不是用户那台机器。
+         ★ 工具端还没交付时本页照样能打开：状态显示「未接入」+ 契约说明，
+           不会因为连不上而抛错或留一张空表。 -->
+    <section class="view" id="view-dl">
+      <div class="grid g6" id="dlStats"></div>
+      <div class="dlnote" id="dlNote" style="margin-top:13px"></div>
+
+      <div class="panel">
+        <div class="ph"><h3>加入下载</h3><span class="sp"></span><span class="mut" id="dlAddHint">—</span></div>
+        <div class="pb">
+          <div class="tools" style="margin:0">
+            <input type="text" id="dlUri" placeholder="粘贴 magnet:?xt=urn:btih:… 或 http(s) 直链（回车加入）"
+                   onkeydown="if(event.key==='Enter')dlAdd()">
+            <button class="btn pri" id="dlAddBtn" onclick="dlAdd()">加入下载</button>
+            <button class="btn sm" onclick="dlPaste()" title="从剪贴板读一条链接">粘贴</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tools" style="margin-top:13px">
+        <div class="chips" id="dlTabs"></div>
+        <span class="sp" style="flex:1"></span>
+        <span class="mut" id="dlInfo">—</span>
+        <button class="btn sm" onclick="dlRefresh(true)">刷新</button>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th>任务</th>
+            <th style="width:188px">进度</th>
+            <th style="width:96px">大小</th>
+            <th style="width:98px">速度</th>
+            <th style="width:92px">剩余</th>
+            <th style="width:84px">状态</th>
+            <th style="width:158px">操作</th>
+          </tr></thead>
+          <tbody id="dlRows"></tbody>
+        </table>
+        <div class="empty" id="dlEmpty" style="display:none"></div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><h3>下载器设置</h3><span class="sp"></span>
+          <span class="mut">写入 data/magnet-config.json · 换机器要重设</span></div>
+        <div class="pb">
+          <div class="dlcfg">
+            <div class="fld"><label>下载目录</label>
+              <input type="text" id="dcDir" placeholder="留空 = %USERPROFILE%\Downloads\KomoMagnet">
+              <div class="hint">只影响工具端落盘位置，网页不碰文件系统</div></div>
+            <div class="fld"><label>最大并发（1–16）</label><input type="number" id="dcConc" min="1" max="16"></div>
+            <div class="fld"><label>限速</label>
+              <input type="text" id="dcSpeed" placeholder="8M / 512K，留空 = 不限">
+              <div class="hint">格式为「数字 + K/M/G」</div></div>
+            <div class="fld"><label>做种时长（分钟）</label>
+              <input type="number" id="dcSeed" min="0" max="1440">
+              <div class="hint">0 = 下完不做种（默认，省上行带宽）</div></div>
+            <div class="fld"><label>探活起始端口</label>
+              <input type="number" id="dcPort" min="1024" max="65535">
+              <div class="hint">被占用时按 6801–6805 顺延</div></div>
+            <div class="fld"><label>探不到工具时用协议唤起</label>
+              <select id="dcAuto" style="width:100%;padding:8px 9px">
+                <option value="1">允许（komomagnet://）</option>
+                <option value="0">不允许</option>
+              </select></div>
+          </div>
+          <div class="tools" style="margin:14px 0 0">
+            <button class="btn pri" onclick="dlSaveCfg()">保存设置</button>
+            <button class="btn sm" onclick="dlLoadCfg()">还原</button>
+            <span class="sp" style="flex:1"></span>
+            <span class="mut" id="dcInfo">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 日志 ═══ -->
+    <section class="view" id="view-log">
+      <div class="tools">
+        <button class="btn sm" onclick="loadLog()">刷新</button>
+        <span class="mut" id="logInfo">—</span>
+      </div>
+      <div class="panel"><div class="pb" id="logList"></div></div>
+    </section>
+
+    <!-- ═══ 设置 ═══ -->
+    <section class="view" id="view-set">
+      <div class="panel">
+        <div class="ph"><h3>管理鉴权（v10.91 改为管理员账号）</h3></div>
+        <div class="pb">
+          <div class="kv" style="line-height:2">
+            <div><i>登录方式</i>右上角 <b>登录</b> → 用户名 + 密码。登录后 30 天内免重复输入</div>
+            <div><i>本机</i>8123 / 8124 直连 <b>免登录</b>（回环 + 本地 Host + 无转发头 三条件同时成立）</div>
+            <div><i>账号源</i>环境变量 <span class="code">GAMEHUB_ADMIN_USER</span> + <span class="code">GAMEHUB_ADMIN_PASS</span>
+              &gt; <span class="code">data/admin-account.json</span>（只存 scrypt 派生值，明文不落盘、不入库）</div>
+            <div><i>改密码</i><span class="code">node tools/set-admin-account.js &lt;用户名&gt; &lt;密码&gt;</span>（改完不用重启，下次登录即生效）</div>
+            <div><i>令牌</i>仍然保留：抓取脚本 / 无头核验走 <span class="code">X-Admin-Token</span>，人在登录弹窗点「用令牌登录」也能用</div>
+            <div><i>当前</i><span id="setTok">未登录</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- ★ v10.103：接口契约**写在管理页里**，而不是只留在 docs/ ——
+           工具端改了端口 / secret / 方法名时，第一个该来看的就是这张表。 -->
+      <div class="panel">
+        <div class="ph"><h3>磁力下载接口（v10.103 预留）</h3><span class="sp"></span>
+          <span class="mut" id="setDlState">—</span></div>
+        <div class="pb kv" style="line-height:2">
+          <div><i>工具</i><b>Komo-Magnet</b> —— 本机常驻，只做「磁力 → 下载任务」这一件事</div>
+          <div><i>传输</i>浏览器 ↔ <span class="code">http://127.0.0.1:6800/jsonrpc</span>（JSON-RPC 2.0 · 直接沿用 aria2 契约）</div>
+          <div><i>鉴权</i><span class="code">params[0] = token:komomagnet-local</span>（与工具端 <span class="code">--rpc-secret</span> 一致）</div>
+          <div><i>方法</i><span class="code">aria2.getVersion</span> 探活 · <span class="code">addUri</span> 加任务 ·
+            <span class="code">tellStatus</span>/<span class="code">tellActive</span>/<span class="code">tellWaiting</span>/<span class="code">tellStopped</span> 取任务 ·
+            <span class="code">pause</span>/<span class="code">unpause</span>/<span class="code">remove</span> 控制</div>
+          <div><i>服务端</i><span class="code">GET /api/admin/download/meta</span>（契约元信息）·
+            <span class="code">GET|POST /api/admin/download/config</span>（配置落盘）</div>
+          <div><i>降级</i>RPC 不通 → 协议 <span class="code">komomagnet://add?uri=</span> 唤起 → 仍不通则云下载兜底</div>
+          <div><i>全文</i>仓库 <span class="code">docs/KOMO-MAGNET-API.md</span>（请求/响应示例与错误码）</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h3>数据边界（重要）</h3></div>
+        <div class="pb mut" style="line-height:1.95">
+          · 线上容器的 <span class="code">data/</span> 会在<b>每次发布</b>时被本地载荷覆盖 ⇒ 线上做的豁免、备注、资料覆盖<b>不跨发布保留</b>。<br>
+          · 需要长期保留的管理动作，请在本地实例（8123/8124）做，再发布。<br>
+          · 备注存 <span class="code">data/game-notes.json</span>；豁免存 <span class="code">data/hide-overrides.json</span>（已 gitignore）。<br>
+          · 下载器配置存 <span class="code">data/magnet-config.json</span>（已 gitignore：含本机绝对路径）；<b>下载的文件不在服务端</b>，落在你本机的工具目录。<br>
+          · <b>资料覆盖存 <span class="code">data/game-profile.json</span></b>（不入库）：页面管理改的标题/封面/热度/链接、游戏库改的简介/类型/厂商/发售日/别名都在这里，<b>不回写爬虫产物</b>。<br>
+          · 资料覆盖<b>只改展示，不参与匹配</b> —— 改标题不会影响已匹配的 MOD / 修改器 / 存档归属。<br>
+          · 所有管理写操作都会追加到 <span class="code">data/admin-log.jsonl</span>（谁/何时/对哪条/账号还是令牌）。
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h3>最近操作</h3><span class="sp"></span><a href="#" onclick="go('log');return false">查看全部 →</a></div>
+        <div class="pb" id="setLog"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ═══ 登录弹窗（v10.91 管理员账号）═══
+     ★ 口令**只在服务端比对**：这个文件里没有任何密码常量。
+       如果把它做成前端硬编码对比，任何人 View Source 就拿到密码了。 -->
+<div class="mask" id="lmask" onclick="if(event.target===this)closeLogin()">
+  <div class="modal sm">
+    <div class="mh">
+      <div>
+        <h3 id="lgTitle">管理员登录</h3>
+        <div class="meta" id="lgSub">账号校验在服务端，密码不写进前端文件</div>
+      </div>
+      <span class="sp"></span>
+      <button class="mclose" onclick="closeLogin()">×</button>
+    </div>
+    <div class="mcol" style="padding:18px">
+      <div id="lgPanePwd">
+        <div class="fld"><label>用户名</label><input type="text" id="lgUser" autocomplete="username" placeholder="liyou"></div>
+        <div class="fld"><label>密码</label>
+          <div class="ln">
+            <input type="password" id="lgPass" autocomplete="current-password"
+                   onkeydown="if(event.key==='Enter')submitLogin()">
+            <button class="btn sm" id="lgEye" onclick="togglePass()" title="显示 / 隐藏密码">👁</button>
+          </div>
+        </div>
+        <div class="mut" id="lgMsg" style="min-height:19px;font-size:12.5px;line-height:1.5"></div>
+      </div>
+      <div id="lgPaneTok" style="display:none">
+        <div class="fld"><label>管理令牌</label>
+          <div class="ln">
+            <input type="password" id="tkInput" autocomplete="off" placeholder="data/admin-token.json 里的 token">
+            <button class="btn sm" id="tkEye" onclick="toggleTk()" title="显示 / 隐藏令牌">👁</button>
+          </div>
+          <div class="hint">这条通道主要给脚本 / 无头工具用，人用账号登录即可。</div>
+        </div>
+        <div class="mut" id="lgTokMsg" style="min-height:19px;font-size:12.5px"></div>
+      </div>
+    </div>
+    <div class="mf">
+      <a href="#" class="mut" id="lgSwitch" onclick="lgMode();return false">用令牌登录</a>
+      <span class="sp"></span>
+      <button class="btn sm" onclick="closeLogin()">取消</button>
+      <button class="btn pri" id="lgGo" onclick="submitLogin()">登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 编辑弹窗 ═══ -->
+<div class="mask" id="mask" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="mh">
+      <img id="mCover" alt="">
+      <div style="min-width:0">
+        <h3 id="mTitle">—</h3>
+        <div class="meta" id="mMeta"></div>
+      </div>
+      <span class="sp"></span>
+      <button class="mclose" onclick="closeModal()">✕</button>
+    </div>
+    <div class="mb">
+      <div class="mcol">
+        <div class="fld">
+          <label>备注（管理标注，不影响抓取与搜索）</label>
+          <textarea id="mNote" placeholder="例如：等更新 / 封面错 / 已人工核对 / 别名待补"></textarea>
+          <div class="hint">最长 500 字 · 存 data/game-notes.json</div>
+        </div>
+        <div class="fld">
+          <label>列表状态</label>
+          <div class="seg" id="mSeg">
+            <button data-op="clear">跟随规则</button>
+            <button data-op="show">强制显示</button>
+            <button data-op="hide">强制隐藏</button>
+          </div>
+          <div class="hint" id="mSegHint">跟随规则 = 按冷门口径自动判定</div>
+        </div>
+        <div class="fld">
+          <label>记录信息</label>
+          <div class="kv" id="mInfo">—</div>
+        </div>
+      </div>
+      <div class="mcol">
+        <div id="mRes"><div class="mut">加载资源中…</div></div>
+      </div>
+    </div>
+    <div class="mf">
+      <span class="stat-line" id="mStat"></span>
+      <span class="sp"></span>
+      <button class="btn" onclick="closeModal()">关闭</button>
+      <button class="btn pri" onclick="saveAll()">保存</button>
+    </div>
+  </div>
+</div>
+<!-- ═══ v10.97 条目查看弹窗（模块页每行「查看」）═══
+     设计口径：**这一条条目的全部内容都在这里**，不需要再跳源站。
+     版式参照用户给的帖子详情页截图：文档图标 + 标题 + 作者行 → 大封面 →
+     板块/原作者/时间/浏览量 → 原链 → 分节正文 →（结构化来源）字段与链接。
+     帖子类（机地 MOD / 修改器）渲染 content 全文；结构化来源（FitGirl / Thunderstore /
+     修改器库 / 存档）渲染字段 + 链接。源站外链保留，但不再是唯一出路。 -->
+<div class="mask" id="rmView" onclick="if(event.target===this)rmvClose()">
+  <div class="modal rmv">
+    <div class="rmv-hd">
+      <span class="rmv-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 1.6h5.4L13 5.2v9.2H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.2 1.7v3.6h3.7" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+      <div class="t">
+        <h3 id="rmvTitle">—</h3>
+        <div class="rmv-sub" id="rmvSub"></div>
+      </div>
+      <button class="mclose" onclick="rmvClose()">✕</button>
+    </div>
+    <div class="rmv-scroll" id="rmvBody"></div>
+  </div>
+</div>
+<!-- ═══ 资料 / 爬虫字段弹窗（页面管理 + 游戏库共用一套表单）═══
+     两个页面写的是同一份 data/game-profile.json，只是各暴露一组字段：
+       页面管理 → 标题 / 封面 / 热度 / 平台链接（爬回来的东西）
+       游戏库   → 标题 / 封面 / 简介 / 类型 / 厂商 / 发行 / 发售日 / 别名（整理后的资料）
+     留空 = 删掉该字段的覆盖，回到爬虫值（表单上方用「人改」角标标出当前哪些字段被覆盖过）。 -->
+<div class="mask" id="pmask" onclick="if(event.target===this)closeProf()">
+  <div class="modal" style="max-width:760px">
+    <div class="mh">
+      <img id="pfCover" alt="">
+      <div style="min-width:0">
+        <h3 id="pfTitle">—</h3>
+        <div class="meta" id="pfMeta"></div>
+        <!-- ★ v10.106：合并后两种形态在**同一个弹窗**里切 —— 不必为了看一眼爬取值
+             退出重进。两套字段写同一份覆盖文件的不同字段，所以能放在一起。 -->
+        <div class="pftabs" id="pfTabs">
+          <span class="pftab on" data-m="games" onclick="pfSetMode('games')">游戏资料</span>
+          <span class="pftab" data-m="pages" onclick="pfSetMode('pages')">爬取字段</span>
+        </div>
+      </div>
+      <span class="sp"></span>
+      <button class="mclose" onclick="closeProf()">✕</button>
+    </div>
+    <div class="mb" style="grid-template-columns:1fr">
+      <div class="mcol">
+        <div class="fld">
+          <label>游戏名 <span id="pfTitleOvr"></span></label>
+          <input type="text" id="pfTitleIn" placeholder="留空 = 用爬虫抓到的标题">
+        </div>
+        <div class="fld">
+          <label>封面图 URL <span id="pfCoverOvr"></span></label>
+          <div class="ln">
+            <input type="text" id="pfCoverIn" placeholder="留空 = 用爬虫抓到的封面">
+            <button class="btn sm" onclick="pfPreview()">预览</button>
+          </div>
+          <div class="hint">外链即可；主站列表与详情页都用这张</div>
+        </div>
+        <div class="fld" id="pfCrawl">
+          <div class="row2">
+            <div><label>热度 <span id="pfHotOvr"></span></label><input type="number" id="pfHotIn" min="0" placeholder="爬取值"></div>
+            <div><label>平台链接 <span id="pfUrlOvr"></span></label><input type="text" id="pfUrlIn" placeholder="爬取值"></div>
+          </div>
+        </div>
+        <div class="fld" id="pfData1">
+          <label>简介 <span id="pfIntroOvr"></span></label>
+          <textarea id="pfIntroIn" placeholder="留空 = 用爬虫抓到的介绍"></textarea>
+        </div>
+        <div class="fld" id="pfData2">
+          <label>类型标签 <span id="pfGenresOvr"></span></label>
+          <input type="text" id="pfGenresIn" placeholder="动作, 角色扮演（逗号分隔）">
+        </div>
+        <div class="fld" id="pfData3">
+          <div class="row2">
+            <div><label>厂商 <span id="pfDevOvr"></span></label><input type="text" id="pfDevIn" placeholder="Developer"></div>
+            <div><label>发行 <span id="pfPubOvr"></span></label><input type="text" id="pfPubIn" placeholder="Publisher"></div>
+          </div>
+        </div>
+        <div class="fld" id="pfData4">
+          <div class="row2">
+            <div><label>发售日 <span id="pfDateOvr"></span></label><input type="date" id="pfDateIn"></div>
+            <div><label>别名 <span id="pfAliasOvr"></span></label><input type="text" id="pfAliasIn" placeholder="多个用逗号分隔"></div>
+          </div>
+        </div>
+        <div class="fld" id="pfData5">
+          <label>备注（管理标注，不影响抓取与搜索）</label>
+          <textarea id="pfNote" placeholder="例如：等更新 / 封面错 / 已人工核对 / 别名待补"></textarea>
+          <div class="hint">存 data/game-notes.json，与资料覆盖分开记</div>
+        </div>
+        <div class="fld" id="pfSegWrap">
+          <label>列表状态</label>
+          <div class="seg" id="pfSeg">
+            <button data-op="clear">跟随规则</button>
+            <button data-op="show">强制显示</button>
+            <button data-op="hide">强制隐藏</button>
+          </div>
+          <div class="hint" id="pfSegHint">跟随规则 = 按冷门口径自动判定</div>
+        </div>
+      </div>
+    </div>
+    <div class="mf">
+      <span class="stat-line" id="pfStat"></span>
+      <span class="sp"></span>
+      <button class="btn" onclick="closeProf()">关闭</button>
+      <button class="btn pri" onclick="saveProf()">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════ 基础 ═══════════ */
+const $ = (id) => document.getElementById(id);
+const LIMIT = 50;
+let offset = 0, total = 0, cur = null, curItem = null, segOp = 'clear';
+let showCold = false, onlyNote = false;
+/* ★ v10.106：原「游戏库 / 页面管理」两个菜单的唯一实质差别就是这个开关。
+   开 = 同款多帖折成一行；关 = 逐条帖子。默认开（多数人看的是游戏，不是帖子）。 */
+let groupSame = true;
+const VIEWS = {
+  dash: ['仪表盘', '总览 / 爬虫与数据健康'],
+  games: ['游戏库', '内容 / 收录条目与游戏资料'],
+  /* ★ v10.109：新游检测 —— 源站新出现、库里还没有的条目在这里等人工决定 */
+  new: ['新游检测', '内容 / 源站新出现 · 待决定入库'],
+  /* ★ v10.107：四个模块收成一个视图。标题/面包屑由当前模块现拼（见 modPick），
+     不在这里写死某一种 —— 否则切到 MOD 时顶栏还写着「本体」。
+     老 hash（#m-base 等）走 HASH_ALIAS 别名，仍能直达对应模块。 */
+  rm: ['资源管理', '内容 / 本体 · MOD · 修改器 · 存档'],
+  res: ['覆盖与缺口', '运维 / 按模块分类'],
+  log: ['操作日志', '运维 / 留痕'],
+  /* ★ v10.103：磁力下载（本机工具 Komo-Magnet 的管理端） */
+  dl: ['磁力下载', '运维 / 本机工具 · 任务与设置'],
+  set: ['设置', '运维 / 配置与边界'],
+};
+
+/* ★ v10.107：收成一个入口后，老链接不能死 —— #m-mod 这类 hash 曾经是能直接打开的，
+   加了书签 / 发过链接的人再点进来必须还是那一页（而不是回落仪表盘）。
+   别名表只做「旧 hash → 模块 key」，不新增视图。 */
+const HASH_ALIAS = {
+  'm-base': 'base', 'm-mod': 'mod', 'm-trainer': 'trainer', 'm-save': 'save',
+  'rm-base': 'base', 'rm-mod': 'mod', 'rm-trainer': 'trainer', 'rm-save': 'save',
+};
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(window.__t); window.__t = setTimeout(() => t.classList.remove('on'), 2000);
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function nf(n) { return n == null ? '—' : Number(n).toLocaleString('en-US'); }
+function ts2d(t) {
+  if (!t) return '—';
+  const d = new Date(Number(t) || t);
+  if (isNaN(d)) return '—';
+  return (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0');
+}
+function ago(t) {
+  const n = Number(t) || 0; if (!n) return '—';
+  const diff = Date.now() - n;
+  if (diff < 0) return '刚刚';
+  const m = diff / 60000;
+  if (m < 60) return Math.max(1, Math.round(m)) + ' 分钟前';
+  const h = m / 60; if (h < 24) return Math.round(h) + ' 小时前';
+  const d = h / 24; if (d < 30) return Math.round(d) + ' 天前';
+  return Math.round(d / 30) + ' 个月前';
+}
+
+/* ═══════════ 鉴权：管理员账号（v10.91）═══════════
+ * 用户口径：「为什么要令牌，不如直接给我一个管理员账号」。
+ *   令牌不好记、难核对，填错只会得到一张空表 —— 它本质是一个长得像乱码、
+ *   还要求人工保管的密码。现在改成账号密码登录。
+ *
+ * 三条通道，服务端任一成立即放行（顺序即优先级）：
+ *   ① 本机回环（8123 / 8124 直连）—— 前端不需要任何凭据
+ *   ② 会话：账号密码换来的**随机 sid**（浏览器只拿这个，它本身没有信息量）
+ *   ③ 令牌：保留给脚本 / 无头工具，登录弹窗里留了入口
+ *
+ * ★★ 密码**绝不能**写在前端：本文件里没有任何口令常量，比对发生在 /api/admin/login。
+ *   （做成前端硬编码对比的话，任何人 View Source 就拿到密码了 —— 比令牌更糟。）
+ * ★ 会话过期 / 服务重启后 sid 失效：api() 收到 403 会清掉本地 sid 并提示重新登录，
+ *   而不是让用户对着一张空表猜。 */
+const SKEY = 'gh_admin_sid';       /* 会话 id（服务端内存，重启即失效）*/
+const TKEY = 'gh_admin_token';     /* 令牌（备用通道，脚本同款）*/
+let ACCT = { on: false, user: '', via: '' };
+let LGMODE = 'pwd';                /* 登录弹窗当前页：pwd | tok */
+
+function sid() { return localStorage.getItem(SKEY) || ''; }
+function tok() { return localStorage.getItem(TKEY) || ''; }
+function tokMask(t) { return t ? t.slice(0, 6) + '…' : ''; }
+function showAuth(msg) { $('authMsg').textContent = msg; $('authBar').classList.add('on'); }
+function hideAuth() { $('authBar').classList.remove('on'); }
+
+function acctText() {
+  if (ACCT.on && ACCT.via === 'loopback') return '本机直连';
+  if (ACCT.on && ACCT.via === 'token') return '令牌';
+  if (ACCT.on) return ACCT.user || '已登录';
+  return '未登录';
+}
+function paintAcct() {
+  const on = !!ACCT.on;
+  $('tkDot').className = 'tkdot ' + (on ? 'on' : 'off');
+  $('acctName').textContent = acctText();
+  $('acctBtn').textContent = (on && ACCT.via === 'session') ? '退出' : (on ? '账号' : '登录');
+  if ($('setTok')) {
+    $('setTok').textContent = !on ? '未登录'
+      : ACCT.via === 'loopback' ? '本机回环直连（8123/8124，免登录）'
+        : ACCT.via === 'token' ? '令牌通道（' + tokMask(tok()) + '）'
+          : '已登录：' + (ACCT.user || '?');
+  }
+}
+function acctAction() {
+  if (ACCT.on && ACCT.via === 'session') doLogout();
+  else openLogin();
+}
+
+/* ── 登录弹窗 ── */
+function openLogin() {
+  $('lmask').classList.add('on');
+  lgMode(LGMODE);
+  setTimeout(() => { const el = LGMODE === 'pwd' ? $('lgUser') : $('tkInput'); if (el) el.focus(); }, 40);
+}
+function closeLogin() {
+  $('lmask').classList.remove('on');
+  $('lgMsg').textContent = '';
+  $('lgTokMsg').textContent = '';
+  $('lgPass').value = '';
+}
+function lgMode(m) {
+  LGMODE = m || (LGMODE === 'pwd' ? 'tok' : 'pwd');
+  const pwd = LGMODE === 'pwd';
+  $('lgPanePwd').style.display = pwd ? '' : 'none';
+  $('lgPaneTok').style.display = pwd ? 'none' : '';
+  $('lgTitle').textContent = pwd ? '管理员登录' : '用管理令牌';
+  $('lgSwitch').textContent = pwd ? '用令牌登录' : '用账号密码登录';
+  $('lgGo').textContent = pwd ? '登录' : '保存令牌';
+  if (!pwd) $('tkInput').value = tok();   /* ★ 回填：已保存的令牌要能查看 */
+  $('tkEye').textContent = $('tkInput').type === 'password' ? '👁' : '🙈';
+}
+function togglePass() {
+  const i = $('lgPass');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  $('lgEye').textContent = i.type === 'password' ? '👁' : '🙈';
+}
+function toggleTk() {
+  const i = $('tkInput');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  $('tkEye').textContent = i.type === 'password' ? '👁' : '🙈';
+}
+function submitLogin() { return LGMODE === 'pwd' ? doLogin() : saveToken(); }
+
+async function doLogin() {
+  const user = $('lgUser').value.trim();
+  const pass = $('lgPass').value;
+  if (!user || !pass) { $('lgMsg').textContent = '用户名和密码都要填'; return; }
+  $('lgMsg').textContent = '正在登录…';
+  let r, j;
+  try {
+    /* 登录不走 api()：它还没凭据，且 403 语义不同（这里是「密码错」不是「会话失效」）*/
+    r = await fetch('/api/admin/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, pass }),
+    });
+    j = await r.json().catch(() => ({ ok: false, error: '响应解析失败（HTTP ' + r.status + '）' }));
+  } catch (e) {
+    $('lgMsg').textContent = '网络错误：' + e.message;
+    return;
+  }
+  if (!j.ok) { $('lgMsg').textContent = j.error || ('登录失败（HTTP ' + r.status + '）'); return; }
+  if (j.sid) localStorage.setItem(SKEY, j.sid);
+  localStorage.removeItem(TKEY);        /* 账号登录成功 ⇒ 旧的令牌不再参战，免两条线打架 */
+  ACCT = { on: true, user: j.user || user, via: 'session' };
+  $('lgPass').value = '';
+  closeLogin(); paintAcct(); hideAuth();
+  toast('已登录：' + (j.user || user));
+  refreshAll();
+}
+
+async function doLogout() {
+  if (!window.confirm('退出登录？退出后需要重新输入账号密码。')) return;
+  const s = sid();
+  try {
+    await fetch('/api/admin/logout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sid: s }),
+    });
+  } catch (e) { /* 网络失败也照样清本地：留着无效 sid 只会让页面更难用 */ }
+  localStorage.removeItem(SKEY);
+  ACCT = { on: false, user: '', via: '' };
+  paintAcct();
+  showAuth('已退出登录。点右上角「登录」重新进入。');
+  refreshAll();
+}
+
+/* 令牌通道（保留）：写本地 → 立刻 verify → 给结论，不再"点了保存就弹成功"。 */
+async function saveToken() {
+  const v = $('tkInput').value.trim();
+  if (v) localStorage.setItem(TKEY, v); else localStorage.removeItem(TKEY);
+  $('tkInput').value = tok();           /* ★ 回填：已填写的令牌要能查看 */
+  if (!v) { $('lgTokMsg').textContent = '令牌已清除'; paintAcct(); return; }
+  $('lgTokMsg').textContent = '正在校验…';
+  const j = await api('/api/admin/verify');
+  if (j.ok) {
+    ACCT = { on: true, user: '', via: 'token' };
+    paintAcct(); closeLogin(); hideAuth();
+    toast('令牌有效（' + (j.via || '?') + '）');
+    refreshAll();
+  } else {
+    $('lgTokMsg').textContent = '令牌没有被接受：请核对 data/admin-token.json 里的值。';
+    toast('令牌无效');
+  }
+}
+
+function refreshAll() {
+  reload(); loadLog(); loadSetLog();
+  if ($('stats')) loadStats();
+}
+
+async function api(path, opt) {
+  const s = sid(), t = tok();
+  const send = async (fallback) => {
+    const o = Object.assign({}, opt || {});
+    const isGet = String(o.method || 'GET').toUpperCase() === 'GET';
+    let url = path;
+    const h = { 'Content-Type': 'application/json' };
+    if (!fallback && s) h['X-Admin-Session'] = s;
+    if (!fallback && t) h['X-Admin-Token'] = t;
+    o.headers = h;
+    /* 降级通道（防反代剥自定义头）：会话走 ?sid= / body.sid，令牌走 ?token= / body.token */
+    if (fallback) {
+      if (isGet) {
+        if (s) url += (url.includes('?') ? '&' : '?') + 'sid=' + encodeURIComponent(s);
+        if (t) url += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+      } else if (o.body) {
+        try {
+          const b = JSON.parse(o.body);
+          if (s) b.sid = s;
+          if (t) b.token = t;
+          o.body = JSON.stringify(b);
+        } catch (e) { /* 非 JSON body 不降级 */ }
+      }
+    }
+    const r = await fetch(url, o);
+    const j = await r.json().catch(() => ({ ok: false, error: '响应解析失败（HTTP ' + r.status + '）' }));
+    if (r.status === 403) { j.ok = false; j.needAuth = true; }
+    return j;
+  };
+  const j = await send(false);
+  if (!j.ok && j.needAuth) {
+    if (s || t) { const j2 = await send(true); if (j2.ok) { hideAuth(); return j2; } }
+    /* 会话确实失效了（过期 / 服务重启 / 改了账号）⇒ 清掉本地 sid，别让它一直发无效请求 */
+    if (s) { localStorage.removeItem(SKEY); ACCT = { on: false, user: '', via: '' }; paintAcct(); }
+    showAuth(s
+      ? '登录已失效（会话过期或服务重启）。请重新登录。'
+      : '这条数据需要管理员账号。点右上角「登录」。');
+    return j;
+  }
+  hideAuth();
+  return j;
+}
+
+/* ═══════════ 视图切换 ═══════════ */
+function go(v) {
+  /* ★ v10.107：`#rm-<模块>` / 旧 `#m-<模块>` 都先折成「资源管理 + 该模块」。
+     旧链接（#rm-mod / #rm-ts …）没有对应视图 ⇒ 仍然回落仪表盘，
+     否则 secId 匹配不到任何 section，整页变成空白（看起来像"后台坏了"）。 */
+  let mod = HASH_ALIAS[v] || null;
+  if (!mod && v.indexOf('rm-') === 0 && RM[v.slice(3)]) mod = v.slice(3);
+  if (mod) { rmMod = mod; rmSrc = ''; rmOff = 0; v = 'rm'; }
+  if (!VIEWS[v]) v = 'dash';
+  /* 顶栏跟着**当前模块**走 —— 「资源管理 / MOD」比四个视图各写一条标题更准，
+     也才看得出同一页里现在停在哪一格。 */
+  const [t, c] = (v === 'rm' && RM[rmMod])
+    ? ['资源管理 · ' + RM[rmMod].label, crmOf(rmMod)]
+    : (VIEWS[v] || VIEWS.dash);
+  $('vTitle').textContent = t; $('vCrumb').textContent = c;
+  /* ★ v10.105：页签条跟着走。判空 —— 老缓存里的 DOM 可能还没这个节点，
+     不能因为一个纯视觉节点把整个 go() 打断（断了就整页白）。 */
+  const vt = $('vTab'); if (vt) vt.textContent = t;
+  document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('on', a.dataset.v === v));
+  /* 资源管理用的是 `#view-resm`（历史 id，改它要动一堆选择器，不值当） */
+  const secId = 'view-' + (v === 'rm' ? 'resm' : v);
+  document.querySelectorAll('.view').forEach((s) => s.classList.toggle('on', s.id === secId));
+  /* hash 带上模块：刷新 / 复制地址后仍停在同一个模块上 */
+  const hv = (v === 'rm') ? 'rm-' + rmMod : v;
+  if (location.hash.slice(1) !== hv) history.replaceState(null, '', '#' + hv);
+  /* ★ v10.103：离开下载页就停轮询 —— 否则切到游戏库之后，
+     每 2 秒仍有一条本机 RPC 在后台跑，用户看不到任何收益。 */
+  if (v !== 'dl') dlLeave();
+  if (v === 'dash') loadStats();
+  if (v === 'games') reload(true);
+  if (v === 'new') newReload(true);
+  if (v === 'res') loadRes();
+  if (v === 'log') { loadLog(); loadSetLog(); }
+  if (v === 'set') { loadSetLog(); dlPaintSetState(); }
+  if (v === 'dl') dlEnter();
+  if (v === 'rm') {
+    /* 直接以 #rm-mod 进站时仪表盘没跑过 ⇒ 页签上还没有数字，
+       补一次 overview（不阻塞表格：resmReload 先跑） */
+    if (!MOD_CNT) loadStats();
+    /* 页签由 resmReload 每次重绘 —— 这里再画一遍是重复（同一个函数，画两次没有意义） */
+    resmReload();
+  }
+}
+document.querySelectorAll('.nav a').forEach((a) => a.addEventListener('click', () => {
+  /* ★ v10.107：点「资源管理」保留当前模块（不重置）—— 用户在这页切过 MOD，
+     去看了眼仪表盘再回来，该还在 MOD，而不是被弹回本体。 */
+  const v = a.dataset.v;
+  go(v === 'rm' ? 'rm-' + rmMod : v);
+}));
+/* ★ v10.94：地址栏 hash 变化也要切视图。
+   原来只在首屏读一次 hash，页面已打开时改 hash（或点别人发来的 `/admin#m-mod` 链接）
+   界面纹丝不动 —— 用户会说「点了链接没反应」，而代码里看不出任何错。
+   `go()` 内部用 replaceState 回写 hash，不会二次触发 hashchange，所以不会打转。 */
+window.addEventListener('hashchange', () => {
+  const v = (location.hash || '#dash').slice(1);
+  /* ★ v10.107：`#rm-mod` 这种带模块的 hash 不在 VIEWS 里 —— 旧判据会**静默忽略**，
+     表现是「点了链接地址变了、界面没动」。所以这里也要认别名。 */
+  if (VIEWS[v] || HASH_ALIAS[v] || (v.indexOf('rm-') === 0 && RM[v.slice(3)])) go(v);
+});
+
+/* ═══════════ 仪表盘（爬虫可视化 · 分模块） ═══════════ */
+/* ★ v10.108：模块卡头部原来直接渲染 `m.icon` 的 unicode 字符（⛃ ◈ ⚔ ▣），
+   实测在正文里会掉成豆腐块（缺字形）—— 侧栏那七个换矢量后，这里成了唯一还在赌字体的地方。 */
+const MOD_ICON = {
+  base: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4.2" rx="1.2"/><path d="M5 8.4V19a1.4 1.4 0 0 0 1.4 1.4h11.2A1.4 1.4 0 0 0 19 19V8.4"/><path d="M10 12.2h4"/></svg>',
+  mod: '<svg viewBox="0 0 24 24"><path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z"/><path d="M3.5 12.2 12 16.7l8.5-4.5"/><path d="M3.5 16.6 12 21l8.5-4.4"/></svg>',
+  trainer: '<svg viewBox="0 0 24 24"><path d="M15.6 3.6a4.7 4.7 0 0 0-4.3 6.7l-6.8 6.8a2.2 2.2 0 0 0 3.1 3.1l6.8-6.8a4.7 4.7 0 0 0 5.8-6l-2.7 2.7-2.5-.7-.7-2.5 2.8-2.6Z"/></svg>',
+  save: '<svg viewBox="0 0 24 24"><rect x="3.6" y="4.4" width="16.8" height="15.2" rx="2.2"/><path d="M7.8 4.4v5.4h8.4V4.4"/><path d="M7.8 14.6h8.4"/></svg>',
+};
+const MODS = [
+  { key: 'base', label: '本体', icon: '⛃', sources: 'FitGirl Repack' },
+  { key: 'mod', label: 'MOD', icon: '◈', sources: '机地 MOD 帖 · Thunderstore' },
+  { key: 'trainer', label: '修改器', icon: '⚔', sources: 'CE/风灵月影 · 机地帖 · GTrainers' },
+  { key: 'save', label: '存档', icon: '▣', sources: '存档位置 · 云存档' },
+];
+let dashMod = 'all';
+
+function paintDashChips() {
+  const opt = [['all', '总览']].concat(MODS.map((m) => [m.key, m.label]));
+  $('dashChips').innerHTML = opt.map(([k, l]) =>
+    '<span class="chip' + (dashMod === k ? ' on' : '') + '" onclick="dashPick(\'' + k + '\')">' + esc(l) + '</span>').join('');
+}
+function dashPick(k) { dashMod = k; paintDashChips(); paintDashMods(); }
+
+async function loadStats() {
+  const j = await api('/api/admin/overview');
+  if (!j.ok) { $('stats').innerHTML = '<div class="card stat"><span>统计加载失败</span><b>—</b></div>'; return; }
+  const c = j.cold, l = j.lib;
+  const cards = [
+    ['库内总数', nf(c.total), 'pri', '端游全量池'],
+    ['可见', nf(c.visible), 'ok', '列表实际展示'],
+    /* ★ v10.109：口径加了「无资源」这一道，「且非新游」单独写会让人以为规则没变 */
+    ['冷门隐藏', nf(c.hidden), 'dan', '无热度·非新游·无资源'],
+    ['热启动保护', nf(c.recentHot0), 'warn', '近 90 天新游'],
+    ['豁免', nf((c.overrideShow || 0) + (c.overrideHide || 0)), '', '手改 ' + (c.overrideShow || 0) + ' 显 / ' + (c.overrideHide || 0) + ' 藏'],
+    ['备注', nf((j.notes || {}).count), '', '管理标注'],
+    ['双源覆盖', nf(l.dual), 'pri', '机地 ∩ XD'],
+    ['资料覆盖', nf(((j.profile || {}).games) || 0), '', '人工改过 ' + nf(((j.profile || {}).games) || 0) + ' 款'],
+  ];
+  $('stats').innerHTML = cards.map((x) =>
+    '<div class="card stat ' + x[2] + '"><span>' + x[0] + '</span><b>' + x[1] + '</b><em>' + x[3] + '</em></div>').join('');
+  $('fNotes').textContent = nf((j.notes || {}).count);
+  /* 左栏角标 —— 数字全部来自服务端现算的 domains（不写死）。
+   * ★ v10.90 四模块合并口径：本体 = FitGirl 条目；MOD = MOD 帖 + Thunderstore 包；
+   *   修改器 = CE/风灵月影 + 机地修改器帖；存档 = 存档位置 + 云存档。 */
+  const dm = j.domains || {};
+  /* ★ v10.107：数字从「侧栏四个角标」搬到「页内四个模块页签」——
+     侧栏只剩一个入口，挂哪一个数字都是撒谎。 */
+  MOD_CNT = {
+    base: dm.fitgirl || 0,
+    mod: (dm.mod || 0) + (dm.ts || 0),
+    trainer: (dm.modifier || 0) + (dm.modifierExtra || 0),
+    save: (dm.save || 0) + (dm.cloud || 0),
+  };
+  $('nGame').textContent = nf((l || {}).total);
+  paintModTabs();
+  $('dashInfo').textContent = '统计时间 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+  const pct = (n) => Math.max(1, Math.min(100, (n / (c.total || 1)) * 100));
+  $('barVis').style.width = pct(c.visible) + '%'; $('vvVis').textContent = nf(c.visible);
+  $('barHide').style.width = pct(c.hidden) + '%'; $('vvHide').textContent = nf(c.hidden);
+  $('barRecent').style.width = pct(c.recentHot0) + '%'; $('vvRecent').textContent = nf(c.recentHot0);
+  $('dashBuilt').textContent = '总数 ' + nf(c.total) + ' · 规则 ' + (c.rule || '');
+
+  /* ★ v10.91 修：这张表原来统一读 `.matched / .total`，但六个源的 stats() **字段名各不相同** ——
+   *   saves 是 `inPcLib / total`、gt 是 `preMatched / listTotal`、tsmods 没有 `total`（是 `communities`）
+   *   ⇒ 三行印出 `NaN% · —,6,632`（分子 undefined 除以分母数字）。
+   *   现在**逐源写真实字段名**，并给一个「取不到就显示 —」的兜底：
+   *   下次某个源改字段时，这一行会**明显变灰**，而不是悄悄印 NaN。 */
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  const sv2 = j.saves || {}, gt2 = j.gt || {}, ts2 = j.tsmods || {}, fg2 = j.fitgirl || {};
+  const health = [
+    ['机地帖 MOD', num((j.mods || {}).matched), num((j.mods || {}).total)],
+    ['修改器', num((j.trainers || {}).matched), num((j.trainers || {}).total)],
+    ['存档（Ludusavi）', num(sv2.inPcLib), num(sv2.total)],
+    ['云存档', num(sv2.withCloud), num(sv2.total)],
+    ['GTrainers', num(gt2.preMatched), num(gt2.listTotal)],
+    ['FitGirl', num(fg2.matchedGames), num((j.lib || {}).total)],
+    ['Thunderstore', num(ts2.matched), num(ts2.communities)],
+  ];
+  $('srcHealth').innerHTML = health.map(([nm, m, t]) => {
+    const bad = m == null || t == null || !t;
+    const p = bad ? 0 : Math.round((m / t) * 100);
+    return '<div class="bar"><div class="nm">' + esc(nm) + '</div>'
+      + '<div class="track"><div class="fill" style="width:' + (bad ? 0 : Math.max(1, p)) + '%;'
+      + (bad ? 'background:#cbd5e1' : '') + '"></div></div>'
+      + '<div class="vv">' + (bad ? '—' : p + '% · ' + nf(m) + '/' + nf(t)) + '</div></div>';
+  }).join('');
+
+  paintDashChips();
+  paintDashMods();
+}
+
+/* 分模块爬虫卡：每个模块一张（总览四张，选中某模块只请求那一张）。
+ * 数据来自 /api/admin/coverage（服务端现算命中集合 + 缺口），不额外造端点。 */
+async function paintDashMods() {
+  const box = $('dashMods');
+  if (!box) return;
+  const list = dashMod === 'all' ? MODS : MODS.filter((m) => m.key === dashMod);
+  box.innerHTML = list.map((m) => '<div class="mcard" id="dc-' + m.key + '"><div class="mut">' + esc(m.label) + ' 加载中…</div></div>').join('');
+  for (const m of list) {
+    const j = await api('/api/admin/coverage?module=' + m.key + '&limit=0');
+    const el = $('dc-' + m.key);
+    if (!el) continue;
+    if (!j.ok) { el.innerHTML = '<div class="mut">' + esc(j.needAuth ? '需要登录' : (j.error || '加载失败')) + '</div>'; continue; }
+    const rows = (j.sources || []).map((s) => {
+      const p = Math.min(100, s.rate || 0);
+      return '<div class="bar" style="grid-template-columns:96px 1fr 78px;padding:5px 0">'
+        + '<div class="nm" style="font-size:12px">' + esc(s.label) + '</div>'
+        + '<div class="track"><div class="fill" style="width:' + Math.max(1, p) + '%"></div></div>'
+        + '<div class="vv" style="font-size:11.5px">' + nf(s.matched) + ' 款</div></div>';
+    }).join('');
+    el.innerHTML = '<div class="hd"><b><i class="mico">' + (MOD_ICON[m.key] || '') + '</i>' + esc(m.label) + '</b><em>覆盖率 ' + (j.rate || 0) + '%</em>'
+      + '<span class="sp" style="flex:1"></span><em>缺 ' + nf(j.missingTotal) + '</em></div>'
+      + rows
+      + '<div class="miss"><div class="mut" style="font-size:11.5px">命中 ' + nf(j.covered) + ' / ' + nf(j.total)
+      + ' 款 · 缺口 <b style="color:#b45309">' + nf(j.missingTotal) + '</b> 款'
+      + ' · 数据 ' + (j.builtAt ? ago(j.builtAt) : '—')
+      + (j.missingTotal ? ' <a href="#" onclick="go(\'res\');return false">看缺口 →</a>' : '') + '</div></div>';
+  }
+}
+
+/* ═══════════ 资源覆盖（按模块分类） ═══════════ */
+const RES_ORDER = ['base', 'mod', 'trainer', 'save'];
+let resMod = 'all';
+
+function paintResChips() {
+  const opt = [['all', '全部模块']].concat(MODS.map((m) => [m.key, m.label]));
+  $('resChips').innerHTML = opt.map(([k, l]) =>
+    '<span class="chip' + (resMod === k ? ' on' : '') + '" onclick="resPick(\'' + k + '\')">' + esc(l) + '</span>').join('');
+}
+function resPick(k) { resMod = k; paintResChips(); loadRes(); }
+
+async function loadRes() {
+  paintResChips();
+  const list = resMod === 'all' ? RES_ORDER : [resMod];
+  $('resCards').innerHTML = list.map((k) => '<div class="mcard" id="rc-' + k + '"><div class="mut">加载中…</div></div>').join('');
+  $('resInfo').textContent = '—';
+  let grand = 0;
+  for (const k of list) {
+    const m = MODS.find((x) => x.key === k) || { label: k };
+    const j = await api('/api/admin/coverage?module=' + k + '&limit=20');
+    const el = $('rc-' + k);
+    if (!el) continue;
+    if (!j.ok) { el.innerHTML = '<div class="hd"><b>' + esc(m.label) + '</b></div><div class="mut">' + esc(j.needAuth ? '需要登录' : (j.error || '加载失败')) + '</div>'; continue; }
+    grand += j.missingTotal || 0;
+    const bars = (j.sources || []).map((s) => {
+      const p = Math.min(100, s.rate || 0);
+      return '<div class="bar" style="grid-template-columns:112px 1fr 118px;padding:5px 0;font-size:12.5px">'
+        + '<div class="nm">' + esc(s.label) + '</div>'
+        + '<div class="track"><div class="fill" style="width:' + Math.max(1, p) + '%"></div></div>'
+        + '<div class="vv">' + p + '% · ' + nf(s.matched) + ' 款 / ' + nf(s.entries) + ' 条</div></div>';
+    }).join('');
+    const miss = (j.missing || []).length
+      ? (j.missing || []).map((g) =>
+        '<div class="miss-item">'
+        + (g.cover ? '<img loading="lazy" src="' + esc(g.cover) + '" alt="" onerror="this.style.visibility=\'hidden\'">' : '<img alt="">')
+        + '<span class="t" title="' + esc(g.title) + '">' + esc(g.title || g.id) + '</span>'
+        + '<span class="mut" style="font-size:11px">' + esc(g.id) + '</span>'
+        + '<span class="mut" style="font-size:11px">热 ' + nf(g.hot) + '</span></div>').join('')
+      : '<div class="mut" style="font-size:12px">这一模块没有缺口</div>';
+    el.innerHTML = '<div class="hd"><b>' + esc(m.label) + '</b><em>覆盖 ' + (j.rate || 0) + '%</em>'
+      + '<span class="sp" style="flex:1"></span><em>数据 ' + (j.builtAt ? ago(j.builtAt) : '—') + ' · 缺口 ' + nf(j.missingTotal) + ' 款</em></div>'
+      + bars
+      + '<div class="miss"><div class="mut" style="font-size:11.5px;margin-bottom:4px">'
+      + '一款都没有的游戏（按热度前 ' + (j.missing || []).length + '）</div>' + miss + '</div>';
+  }
+  $('resInfo').textContent = resMod === 'all'
+    ? '四模块合计缺口 ' + nf(grand) + ' 款（同一款游戏可能在多个模块都缺）'
+    : '缺口 ' + nf(grand) + ' 款';
+}
+
+/* ═══════════ 游戏库列表 ═══════════ */
+function qs() {
+  const p = new URLSearchParams();
+  p.set('scope', 'pc'); p.set('limit', LIMIT); p.set('offset', offset);
+  p.set('admin', '1'); p.set('sort', $('fSort').value || 'updated');
+  const q = $('q').value.trim(); if (q) p.set('q', q);
+  /* ★★ v10.112 修死控件：改前两个分支都写 `p.set('cold','0')` ——
+   *   勾不勾「🌙 显示冷门」都是全量 19,766 条，而 toggleCold 的 toast 还写着
+   *   「仅切换高亮」，可代码里根本没有切换高亮的逻辑 ⇒ 纯装饰控件（实测确认）。
+   *   现在对齐控件名：不勾 ⇒ cold=1（剔除冷门，12,308 条，与前台口径一致）；
+   *   勾选 ⇒ cold=0（全量 19,766 条）。 */
+  p.set('cold', showCold ? '0' : '1');
+  const h = $('fHide').value; if (h) p.set('hidden', h);
+  const s = $('fSrc').value; if (s) p.set('asrc', s);
+  if (onlyNote) p.set('note', '1');
+  /* ★ v10.106：折叠从「两个菜单」改成一个开关（groupSame）。
+     开 ⇒ 按游戏折叠；关 ⇒ 逐条帖子（原「页面管理」的视角）。 */
+  if (groupSame) p.set('group', '1');
+  return '/api/library/browse?' + p.toString();
+}
+
+/* ═══════════ 分页条（页面管理 / 游戏库 / 模块共用） ═══════════
+ * 用户口径「页面跳转可以填写跳转以及附近页面跳转」：
+ *   上一页 / 附近至多 5 个页码 / 下一页 + 「跳至 [ ] 页」输入框（回车即跳）。
+ * 为什么不做全量页码：19,703 条 = 395 页，全渲染出来是一堵按钮墙，
+ * 而管理场景真正会用的就是「附近几页」和「直接跳某一页」。 */
+function pagerHtml(total, limit, off) {
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const cur = Math.min(pages, Math.floor(off / limit) + 1);
+  const near = new Set([1, pages]);
+  for (let d = -2; d <= 2; d++) { const n = cur + d; if (n >= 1 && n <= pages) near.add(n); }
+  const sorted = [...near].sort((a, b) => a - b);
+  let h = '<button class="btn sm" data-pg="' + (cur - 1) + '"' + (cur <= 1 ? ' disabled' : '') + '>上一页</button>';
+  let prev = 0;
+  for (const n of sorted) {
+    if (prev && n - prev > 1) h += '<span class="pgdot">…</span>';
+    h += '<button class="pgn' + (n === cur ? ' on' : '') + '" data-pg="' + n + '">' + n + '</button>';
+    prev = n;
+  }
+  h += '<button class="btn sm" data-pg="' + (cur + 1) + '"' + (cur >= pages ? ' disabled' : '') + '>下一页</button>';
+  h += '<span style="margin-left:10px">共 ' + nf(total) + ' 条 · ' + cur + ' / ' + pages + ' 页</span>';
+  h += '<span class="sp"></span><span>跳至</span><input type="number" min="1" max="' + pages
+    + '" placeholder="' + cur + '" data-pgjump><span>页</span><button class="btn sm" data-pgok>跳转</button>';
+  return h;
+}
+function bindPager(el, total, limit, fn) {
+  if (!el) return;
+  el.querySelectorAll('[data-pg]').forEach((b) => {
+    b.onclick = () => { const p = Number(b.dataset.pg); if (!p || p < 1) return; fn(p); };
+  });
+  const inp = el.querySelector('[data-pgjump]');
+  const ok = el.querySelector('[data-pgok]');
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const jump = () => { const p = Math.max(1, Math.min(pages, parseInt(inp.value, 10) || 1)); fn(p); };
+  if (ok) ok.onclick = jump;
+  if (inp) inp.onkeydown = (e) => { if (e.key === 'Enter') jump(); };
+}
+const srcBdgOf = (s) => /xd/i.test(String(s || '')) ? '<span class="bdg b-xd">XDGAME</span>' : '<span class="bdg b-jd">机地</span>';
+
+/* ═══════════ 游戏库列表（管游戏资料） ═══════════ */
+async function reload(resetPage) {
+  if (resetPage) offset = 0;
+  const j = await api(qs());
+  if (!j.ok) {
+    $('rows').innerHTML = '';
+    $('rowsEmpty').style.display = 'block';
+    $('rowsEmpty').textContent = '需要登录或加载失败（' + (j.error || ('HTTP ' + (j.needAuth ? '403' : '?'))) + '）';
+    $('gPgBar').innerHTML = '';
+    return;
+  }
+  total = j.total || 0;
+  const items = j.items || [];
+  $('rowsEmpty').style.display = items.length ? 'none' : 'block';
+  $('rowsEmpty').textContent = '没有符合条件的游戏';
+  $('rows').innerHTML = items.map((g, i) => {
+    const comp = Number(g.comp || 0);
+    /* ★ v10.108：原来 0-2 项就整格涂红（`b-hide`）。实测这页 90% 的行都是 2/7
+       ⇒ 整列变成一片红，读起来像「全表出错」，真正需要一眼看出的低完整度反而不突出。
+       改成**迷你计量条 + 中性数字**：条长表达比例，颜色只在最低两档转为暖色。 */
+    /* 2/7 是这页的**常态**（实测占九成），常态不该是红色警报 —— 只有 0 项才红。 */
+    const compBdg = '<span class="cmp ' + (comp === 0 ? 'zero' : comp >= 5 ? 'hi' : comp >= 3 ? 'mid' : '')
+      + '" style="--n:' + comp + '" title="资料 7 项里填了几项">'
+      + '<i></i><b>' + comp + '/7</b></span>';
+    const stBdg = g.hidden ? '<span class="bdg b-hide">隐藏</span>' : '<span class="bdg b-vis">可见</span>';
+    /* ★ v10.106：冷门不再占状态列的一个角标。状态列要同时装「隐藏 + 冷门」两个角标
+       时必然折行（96px 放不下），而冷门只是分类、不是状态 ⇒ 收成标题后的一个月亮点。 */
+    const coldBdg = g.cold ? '<span class="cold-ic" title="冷门：hot=0 且非近 90 天新游">\u{1F319}</span>' : '';
+    /* ★ v10.106：合并后补两列，都是原「页面管理」独有的信息 ——
+       评分取库内值（0/空一律画「—」，不画 0.0，0 分和没评分是两件事）；
+       更新时间用 ago()，与仪表盘的「上次同步」同一套相对时间口径。 */
+    const sc = Number(g.score);
+    const scTxt = sc > 0 ? sc.toFixed(1) : '<span class="mut">—</span>';
+    return '<tr class="row fxrow" data-i="' + i + '">'
+      + '<td>' + (g.cover ? '<img class="cv" loading="lazy" src="' + esc(g.cover) + '" alt="" onerror="this.style.visibility=\'hidden\'">' : '<div class="cv"></div>') + '</td>'
+      + '<td><div class="tt" title="' + esc(g.title) + '">' + esc(g.title || '—')
+      + ((g.prof || []).length ? '<span class="ovr" title="已人工覆盖：' + esc((g.prof || []).join(' / ')) + '">人改</span>' : '')
+      /* v10.94：同款多帖子折叠后，如实标出「还有几条」以及分别是哪些（悬停可看） */
+      + (Number(g.dupCount) > 1
+        ? '<span class="dup" title="同款还有 ' + (g.dupCount - 1) + ' 条帖子：'
+          + esc((g.alts || []).map((a) => a.title + '（' + (a.size || '—') + '）').join(' / ')) + '">+'
+          + (g.dupCount - 1) + ' 版本</span>'
+        : '')
+      + coldBdg
+      + '</div></td>'
+      + '<td class="idcol">' + esc(g.id) + '</td>'
+      + '<td>' + srcBdgOf(g.source) + '</td>'
+      + '<td class="mut">' + scTxt + '</td>'
+      + '<td class="mut">' + ago(g.updatedTs) + '</td>'
+      + '<td>' + compBdg + '</td>'
+      + '<td>' + stBdg + '</td>'
+      + '<td>' + (g.note ? '<span class="bdg b-note" title="' + esc(g.note) + '">' + esc(g.note.slice(0, 6)) + (g.note.length > 6 ? '…' : '') + '</span>' : '<span class="mut">—</span>') + '</td>'
+      /* ★ v10.106：两个入口不再并排放在行尾（1440 宽下会竖着堆成两层，行高被撑开）。
+         收成一个「编辑」，进弹窗再用页签切「游戏资料 / 爬取字段」——
+         两套字段写的是同一份覆盖文件的不同字段，互不覆盖（见 pfShowGroups）。 */
+      + '<td><button class="btn sm" onclick="openProf(' + i + ',\'games\',event)" title="编辑：游戏资料 / 爬取字段">编辑</button></td>'
+      + '</tr>';
+  }).join('');
+
+  document.querySelectorAll('#rows tr.row').forEach((tr) => {
+    tr.addEventListener('click', (e) => { if (e.target.closest('button')) return; openProf(+tr.dataset.i, 'games'); });
+  });
+  $('gInfo').textContent = '共 ' + nf(total) + ' 条';
+  $('gPgBar').innerHTML = pagerHtml(total, LIMIT, offset);
+  bindPager($('gPgBar'), total, LIMIT, (p) => { offset = (p - 1) * LIMIT; reload(); });
+  window.__items = items;
+}
+function applySearch() { offset = 0; reload(); }
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') applySearch(); });
+
+/* ═══════════ 新游检测（v10.109 · 用户需求 ④）═══════════
+ * 用户口径：「遇到新游戏则在这里，我来决定是入库」。
+ * 这一页只做三件事：扫描（源站有/库里没有）、入库（写库+强制可见+补资料）、忽略（记账）。
+ *
+ * ★ 为什么「扫描」和「刷新」是两个按钮：
+ *   扫描会发**外部网络请求**（抓源站 1~10 页，每页约 35 条），刷新只读本地候选池。
+ *   合成一个的话，用户只想「看看现在有什么」时会被迫等一次网络往返。
+ * ★ 扫描期间锁按钮：服务端有并发锁（连点会 409），前端也要给即时反馈 ——
+ *   点了 3 秒没有任何变化，用户会以为没点上，然后再点一次。 */
+let ngStatus = 'pending', ngOff = 0, ngTotal = 0, ngBusy = false;
+const NG_LIMIT = 40;
+
+function ngRow(g) {
+  const sc = Number(g.score);
+  const scTxt = sc > 0 ? sc.toFixed(1) : '<span class="mut">—</span>';
+  /* 操作列按状态给按钮，而不是全给完再 disabled 灰掉 ——
+     「已入库」的行留一个灰掉的「入库」按钮，会让人一直以为自己还能再点。 */
+  let act;
+  if (g.status === 'pending') {
+    /* ★ v10.109 实拍修正：一屏 21 行、每行一个**主色实底**「入库」，整页的主色被平均分配，
+       反而看不出哪个是主动作（页头那个「扫描源站」才是）。行内改描边，悬停才变主色。 */
+    act = '<button class="btn sm ng-go" onclick="ngAdmit(\'' + esc(g.id) + '\',this)">入库</button>'
+      + '<button class="btn sm" style="margin-left:6px" onclick="ngIgnore(\'' + esc(g.id) + '\',this)">忽略</button>';
+  } else if (g.status === 'admitted') {
+    act = '<span class="bdg b-vis">已入库</span>'
+      + '<a class="btn sm" style="margin-left:6px" href="/?open=' + encodeURIComponent(g.id) + '" target="_blank" rel="noopener">打开 ↗</a>'
+      + '<button class="btn sm" style="margin-left:6px" onclick="ngRestore(\'' + esc(g.id) + '\')" title="退回待处理（不回滚已入库的数据）">退回</button>';
+  } else {
+    act = '<span class="bdg b-note">已忽略</span>'
+      + '<button class="btn sm" style="margin-left:6px" onclick="ngRestore(\'' + esc(g.id) + '\')">恢复</button>';
+  }
+  /* 上架 / 更新：两个时间都可能缺（XD 列表页不保证给全）—— 缺的时候不画占位 */
+  /* ★ v10.109 实拍修正：新游的「上架」和「更新」几乎总是同一个时间点，
+     两行并排写出来是同一句话说两遍（实拍 21 行里有 19 行如此）。
+     ⇒ 只在「更新」明显晚于「上架」时才写第二行。 */
+  const dts = [
+    g.publishTs ? '上架 ' + esc(ago(g.publishTs)) : '',
+    (g.updatedTs && (!g.publishTs || Math.abs(g.updatedTs - g.publishTs) > 864e5))
+      ? (g.publishTs ? '更新 ' : '') + esc(ago(g.updatedTs)) : '',
+  ].filter(Boolean).join('<br>');
+  const gen = (g.genres || []).length ? esc((g.genres || []).slice(0, 2).join(' / ')) : '源站未标类型';
+  return '<tr class="row fxrow">'
+    + '<td>' + (g.cover
+      ? '<img class="cv" loading="lazy" src="' + esc(g.cover) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      : '<div class="cv"></div>') + '</td>'
+    + '<td><div class="tt" title="' + esc(g.title) + '">' + esc(g.title || '—') + '</div>'
+    + '<div class="mut" style="font-size:11px;margin-top:2px">' + gen + '</div></td>'
+    + '<td class="idcol">' + esc(g.id) + '</td>'
+    + '<td class="mut">' + scTxt + '</td>'
+    + '<td class="mut">' + esc(g.size || '—') + '</td>'
+    + '<td class="mut">' + (dts || '—') + '</td>'
+    + '<td class="mut">' + (g.firstSeen ? esc(ago(g.firstSeen)) : '—') + '</td>'
+    + '<td style="white-space:nowrap">' + act + '</td>'
+    + '</tr>';
+}
+
+async function newReload(resetPage) {
+  if (resetPage) ngOff = 0;
+  const p = new URLSearchParams();
+  p.set('status', ngStatus);
+  p.set('limit', NG_LIMIT);
+  p.set('offset', ngOff);
+  const q = ($('nq') ? $('nq').value : '').trim();
+  if (q) p.set('q', q);
+  const j = await api('/api/admin/new-games?' + p.toString());
+  const tb = $('newRows'), emp = $('newEmpty');
+  if (!j.ok) {
+    tb.innerHTML = '';
+    if (emp) {
+      emp.style.display = 'block';
+      emp.textContent = '加载失败：' + (j.error || ('HTTP ' + (j.needAuth ? '403' : '?')));
+    }
+    if ($('nInfo')) $('nInfo').textContent = '—';
+    return;
+  }
+  ngTotal = j.total || 0;
+  const items = j.items || [];
+  if (emp) {
+    emp.style.display = items.length ? 'none' : 'block';
+    emp.textContent = items.length ? '' : (q ? '没有匹配的候选'
+      : (ngStatus === 'pending' ? '暂无候选 —— 点「扫描源站」看看源站有没有新游戏' : '这一档是空的'));
+  }
+  tb.innerHTML = items.map(ngRow).join('');
+  const pg = $('newPgBar');
+  if (pg) {
+    pg.innerHTML = ngTotal > NG_LIMIT ? pagerHtml(ngTotal, NG_LIMIT, ngOff) : '';
+    bindPager(pg, ngTotal, NG_LIMIT, (n) => { ngOff = (n - 1) * NG_LIMIT; newReload(); });
+  }
+  if ($('nInfo')) $('nInfo').textContent = '共 ' + nf(ngTotal) + ' 条';
+  ngBadge();
+}
+
+/** 侧栏角标 = **待处理数**（不是总数）—— 它要表达「有多少件事等你决定」 */
+async function ngBadge() {
+  if (!$('nNew')) return;
+  const j = await api('/api/admin/new-games/stats');
+  if (j && j.ok) $('nNew').textContent = nf(j.pending || 0);
+}
+
+async function newScan() {
+  if (ngBusy) return;
+  const btn = $('nScanBtn');
+  const label = btn ? btn.textContent : '';
+  ngBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = '扫描中…'; }
+  try {
+    const pages = Number(($('nScanPages') || {}).value) || 3;
+    const j = await api('/api/admin/new-games/scan', { method: 'POST', body: JSON.stringify({ pages }) });
+    if (!j.ok) { toast(j.error || '扫描失败'); return; }
+    const bits = ['源站 ' + nf(j.fetched) + ' 条', '新增候选 ' + nf(j.added)];
+    if (j.known) bits.push('已知 ' + nf(j.known));
+    if (j.alreadyInLib) bits.push('库内已有 ' + nf(j.alreadyInLib));
+    toast('扫描完成：' + bits.join(' · '));
+    /* 扫完一定切回「待处理」：用户点扫描的意图就是看新的，
+       留在「已忽略」页签上看结果等于什么也没发生。 */
+    if (ngStatus !== 'pending') {
+      ngStatus = 'pending';
+      if ($('nStatus')) $('nStatus').value = 'pending';
+    }
+    await newReload(true);
+  } finally {
+    ngBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+async function ngAdmit(id, el) {
+  if (el) { el.disabled = true; el.textContent = '入库中…'; }
+  const j = await api('/api/admin/new-games/admit', { method: 'POST', body: JSON.stringify({ id }) });
+  if (!j.ok) {
+    toast(j.error || '入库失败');
+    if (el) { el.disabled = false; el.textContent = '入库'; }
+    return;
+  }
+  /* detailFilled 要说出来：用户点的「入库」实际包含「补详情真值」这一步，
+     不说的话他不知道这次为什么多花了 1~2 秒。 */
+  toast('已入库' + (j.detailFilled ? '（已补齐详情资料）' : ''));
+  await newReload();
+  loadStats();   /* 库内总数 / 可见数都变了 */
+}
+
+async function ngIgnore(id, el) {
+  if (el) { el.disabled = true; el.textContent = '处理中…'; }
+  const j = await api('/api/admin/new-games/ignore', { method: 'POST', body: JSON.stringify({ id }) });
+  if (!j.ok) {
+    toast(j.error || '操作失败');
+    if (el) { el.disabled = false; el.textContent = '忽略'; }
+    return;
+  }
+  toast('已忽略（之后扫描不再列出）');
+  await newReload();
+}
+
+/** 恢复：已忽略 / 已入库 → 待处理。只改候选状态，不回滚已写进库的数据。 */
+async function ngRestore(id) {
+  const j = await api('/api/admin/new-games/restore', { method: 'POST', body: JSON.stringify({ id }) });
+  if (!j.ok) { toast(j.error || '恢复失败'); return; }
+  toast('已退回待处理');
+  await newReload();
+}
+
+/* ═══════════ 模块：四类 · 都以游戏为主键 ═══════════
+ *
+ * ★ v10.90 结构变化：六个域 → **四个模块**，FitGirl 并入「本体」、Thunderstore 并入「MOD」。
+ *   用户口径：「模块类型管理分为本体/MOD/修改器/存档，fitgirl 和 thunderstore 并到对应模块中」。
+ *
+ * 两层定义（加一个源只动第二层）：
+ *   `RM[模块]`  = { label, srcs: [[子源key, 显示名], …] }   ← 侧栏与页内切换条
+ *   `SRC_DEF[子源]` = { cols, url, norm }                    ← 单源取数与列
+ *   ⇒ 加第五个模块 / 给 MOD 再加一个源，都不用碰渲染器。
+ *
+ * 【为什么子源不提供「全部合并」】MOD 帖按 pv 排、Thunderstore 按 downloads 排，
+ *   两源字段与排序键都不同。合并只能客户端拼，分页语义立刻失真（第 2 页不是全局 51–100 条）。
+ *   宁可不给这一档，也不给一个「翻页会漏数据」的合并视图。
+ *
+ * 【为什么 gameId 是第一列】任何一条资源都能回答「它属于哪款游戏」，
+ *   点游戏名直接打开那款游戏的管理弹窗。⚠️ 未匹配的行如实写「未匹配」，不假装能跳转。
+ */
+const RM_LIMIT = 50;
+/* ★ v10.107：默认进「本体」—— 它是列表第一条，也是用户最先要看的那一类。
+   以前默认 'mod' 是因为 MOD 有数字角标可对照，现在数字在页签上，不需要这个偏置。 */
+let rmMod = 'base', rmSrc = '', rmOff = 0, rmQ = '', rmTotal = 0;
+/* 四个模块各自的条目数（loadStats 现算；null = 还没拿到，页签上就不显示数字，
+   而不是印 0 —— 0 会被读成「这一类一条都没有」） */
+let MOD_CNT = null;
+
+const SRC_DEF = {
+  fitgirl: {
+    cols: [['日期', '96px'], ['标记', '70px']],
+    /* FitGirl / Thunderstore 原本只有「按 libId 反查」，没有扁平列表 ⇒ 走 /api/admin/res（需登录） */
+    url: (q, off) => '/api/admin/res?kind=fitgirl&size=' + RM_LIMIT + '&page=' + (Math.floor(off / RM_LIMIT) + 1) + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.gameId, gameTitle: x.gameTitle, title: x.title,
+      cells: [esc(String(x.date || '').slice(0, 10) || '—'),
+        (x.extra && x.extra.adult) ? '<span class="bdg b-hide">18+</span>' : '<span class="mut">—</span>'],
+      links: x.links || [],
+    }),
+  },
+  mod: {
+    cols: [['作者', '110px'], ['热度', '70px'], ['更新', '86px']],
+    /* ★ all=1：把「未匹配到游戏」的条目也列出来 —— 左栏角标数的是全部条目，
+     *   列表若默认只给匹配行，两个数字会差几百条（7,825 vs 7,583），
+     *   而管理最该看见的恰恰是那批没匹配上的。 */
+    url: (q, off) => '/api/mods/list?kind=mod&all=1&limit=' + RM_LIMIT + '&offset=' + off + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.libId, gameTitle: x.libTitle || x.game, title: x.title,
+      cells: [esc(x.author || '—'), nf(x.pv), ago(x.ut || x.ct)],
+      links: x.url ? [{ label: '原帖', url: x.url }] : [],
+    }),
+  },
+  ts: {
+    cols: [['社区', '170px'], ['版本', '80px'], ['下载量', '80px']],
+    url: (q, off) => '/api/admin/res?kind=ts&size=' + RM_LIMIT + '&page=' + (Math.floor(off / RM_LIMIT) + 1) + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.gameId, gameTitle: x.gameTitle, title: x.title,
+      cells: [esc(String((x.src || '').replace('Thunderstore · ', '')) || '—'),
+        esc((x.extra || {}).version || '—'), nf((x.extra || {}).downloads)],
+      links: x.links || [],
+    }),
+  },
+  trainers: {
+    cols: [['来源', '150px'], ['版本', '110px']],
+    url: (q, off) => '/api/trainers/list?stats=all&limit=' + RM_LIMIT + '&offset=' + off + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.libId, gameTitle: x.libTitle || x.name, title: x.zh || x.name,
+      cells: [esc(x.source || '—'), 'v' + esc(x.version || '—')],
+      links: x.officialUrl ? [{ label: '官方页', url: x.officialUrl }] : [],
+    }),
+  },
+  jidi: {
+    cols: [['来源', '150px'], ['热度', '110px']],
+    url: (q, off) => '/api/mods/list?kind=modifier&all=1&limit=' + RM_LIMIT + '&offset=' + off + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.libId, gameTitle: x.libTitle || x.game, title: x.title,
+      cells: ['机地帖', '热度 ' + nf(x.pv)],
+      links: x.url ? [{ label: '原帖', url: x.url }] : [],
+    }),
+  },
+  save: {
+    cols: [['存档路径', '86px'], ['注册表', '76px'], ['云存档', '92px'], ['Steam', '92px']],
+    url: (q, off) => '/api/saves/list?stats=all&limit=' + RM_LIMIT + '&offset=' + off + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.libId, gameTitle: x.title || x.name, title: x.title || x.name,
+      cells: [nf((x.paths || []).length), nf((x.regs || []).length),
+        ((x.cloud || []).join(' / ') || '—'), esc(x.steamId || '—')],
+      links: [],
+    }),
+  },
+  cloud: {
+    cols: [['云平台', '110px'], ['存档路径', '86px'], ['Steam', '92px']],
+    url: (q, off) => '/api/saves/list?stats=all&cloud=1&limit=' + RM_LIMIT + '&offset=' + off + (q ? '&q=' + encodeURIComponent(q) : ''),
+    norm: (x) => ({
+      gameId: x.libId, gameTitle: x.title || x.name, title: x.title || x.name,
+      cells: [((x.cloud || []).join(' / ') || '—'), nf((x.paths || []).length), esc(x.steamId || '—')],
+      links: [],
+    }),
+  },
+};
+
+const RM = {
+  base: { label: '本体', srcs: [['fitgirl', 'FitGirl Repack']] },
+  mod: { label: 'MOD', srcs: [['mod', '机地 MOD 帖'], ['ts', 'Thunderstore']] },
+  trainer: { label: '修改器', srcs: [['trainers', 'CE / 风灵月影'], ['jidi', '机地修改器帖']] },
+  save: { label: '存档', srcs: [['save', '存档位置'], ['cloud', '云存档']] },
+};
+
+/* ═══════════ v10.97 条目查看弹窗（模块页每行「查看」）═══════════
+ * 用户口径（v10.94）：「模块页面仅展示对应的模块内容，需要一个查看弹窗，展示对应的内容
+ *           （帖子的话需要完整内容）」。
+ * 用户口径（v10.97）：「管理页面点击后的弹窗我想要也这样的」（附一张帖子详情页截图）。
+ *
+ * 数据来源：列表接口本身就带 content 全文（mods 8,942/8,943 条有），
+ *   所以点开**不发新请求**、不转圈、不受源站限流影响。
+ * ⚠️ 不要改成「点开再拉 /api/mods/item」—— 列表已带全文，多一跳只会更慢且会失败。
+ *
+ * ★ 与 v10.94 的区别不是「换皮」，是**正文从纯文本变成有结构的排版**：
+ *   机地帖正文本身分成「内容详情 / 安装说明 / 下载链接 / 注意事项」几段，
+ *   以前整段塞进 <pre>，作者写的小节标题混在正文里，读起来是一堵墙。
+ *   现在识别三类结构（小节标题 / 编号步骤 / 段落），并把 URL 变成可点链接。
+ */
+const RMV_SRC = {
+  fitgirl: 'FitGirl Repack', mod: '机地 MOD 帖', ts: 'Thunderstore',
+  trainers: '修改器库', jidi: '机地修改器帖', save: '存档位置', cloud: '云存档',
+};
+function rmvFmtTs(v) {
+  const n = Number(v) || 0;
+  if (!n) return '';
+  const d = new Date(n > 1e12 ? n : n * 1000);
+  if (isNaN(d.getTime())) return '';
+  const p = (x) => String(x).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+    + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+/* 行内渲染：**转义优先**，URL 单独切出来再分别转义（否则 href 里的 & 会把属性截断）。
+ * ★ 为什么不用「先 esc 全文再正则替换」：转义后 `&` 是 `&amp;`，再拼进 href 会被浏览器
+ *   解码成 `&` —— 看起来能用，但只要 URL 里出现 `&#39;` 这类序列就会解错。
+ *   切分原始文本再分别转义，只有一条路径，不存在二次解码。 */
+const RMV_URL_RE = /(https?:\/\/[^\s<>"'）)】]+|ed2k:\/\/[^\s<>"']+|magnet:\?[^\s<>"']+)/g;
+function rmvInline(s) {
+  const t = String(s == null ? '' : s);
+  let out = '', last = 0, m;
+  RMV_URL_RE.lastIndex = 0;
+  while ((m = RMV_URL_RE.exec(t))) {
+    out += esc(t.slice(last, m.index));
+    let u = m[0];
+    /* 句末标点不算 URL（实测正文里大量 `链接：https://…。` 的写法） */
+    const tail = (u.match(/[.,;:!?。，；：！？、）)】]+$/) || [''])[0];
+    if (tail) u = u.slice(0, -tail.length);
+    out += '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a>'
+      + esc(tail);
+    last = m.index + m[0].length;
+  }
+  out += esc(t.slice(last));
+  return out;
+}
+
+/* 小节标题判定（**保守白名单**，不是「短行即标题」）。
+ * 为什么保守：正文里「分享文件：xxx」「链接：xxx」这类短行很多，
+ * 一旦整类当标题，正文会被切得七零八落 —— 那比不识别更糟。
+ * 只认两种：`【xxx】` 整行包裹，或**以常见小节词结尾**的短行（≤18 字、无句末标点）。 */
+const RMV_SEC_TAIL = ['说明', '介绍', '方法', '步骤', '链接', '地址', '注意', '日志', '更新',
+  '要求', '教程', '问题', '内容', '详情', '前言', '简介', '功能', '兼容', '安装', '卸载',
+  '配置', '设置', '声明', '须知', '事项', '提示'];
+function rmvIsHead(t) {
+  if (/^【[^】]{1,20}】$/.test(t)) return true;
+  if (t.length > 18) return false;
+  if (/[。！？!?；;，,、：:.…]$/.test(t)) return false;
+  if (/^(http|ed2k|magnet)/i.test(t)) return false;
+  return RMV_SEC_TAIL.some((w) => t.endsWith(w));
+}
+
+/** 正文 → HTML（小节标题 / 编号步骤 / 段落三段式） */
+function rmvDoc(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  let out = '', buf = [];
+  const flush = () => {
+    if (!buf.length) return;
+    out += '<p>' + buf.join('<br>') + '</p>';
+    buf = [];
+  };
+  for (const raw of lines) {
+    const t = raw.trim();
+    if (!t) { flush(); continue; }
+    if (rmvIsHead(t)) {
+      flush();
+      out += '<h5>' + rmvInline(t.replace(/^【/, '').replace(/】$/, '')) + '</h5>';
+      continue;
+    }
+    const m = t.match(/^(\d{1,2})[.、)]\s*(.+)$/);
+    if (m) {
+      flush();
+      out += '<div class="li"><i>' + esc(m[1]) + '.</i><span>' + rmvInline(m[2]) + '</span></div>';
+      continue;
+    }
+    buf.push(rmvInline(t));
+  }
+  flush();
+  /* 作者偶尔会打 **粗体**：转义后 `**` 仍在，就地换成 <b>（限定不含标签的片段，避免咬进 href） */
+  return out.replace(/\*\*([^*<>]{1,80})\*\*/g, '<b>$1</b>');
+}
+
+function rmvOpen(i) {
+  const r = (window.__rmItems || [])[i];
+  if (!r) return;
+  const x = r.raw || {};
+  const srcN = RMV_SRC[rmSrc] || rmSrc || '资源';
+  const title = r.title || x.title || '(无标题)';
+  $('rmvTitle').textContent = title;
+
+  /* 副标题：游戏名 + 主键（主键一眼能对回库） */
+  const gt = r.gameTitle || x.libTitle || x.game || '';
+  const gid = r.gameId || x.libId || '';
+  $('rmvSub').innerHTML = (gt ? '<span>' + esc(gt) + '</span>' : '')
+    + (gid ? '<span class="mut">' + esc(gid) + '</span>' : '')
+    + '<span class="mut">' + esc(srcN) + '</span>';
+
+  let h = '';
+
+  /* ① 大封面（帖子没有封面时退回库封面；都没有就整块不占位） */
+  const cover = x.cover || x.libCover || '';
+  if (cover) {
+    h += '<div class="rmv-hero"><img src="' + esc(cover) + '" alt=""'
+      + ' onerror="this.parentNode.style.display=\'none\'"></div>';
+  }
+
+  /* ② chip 行：板块 / 原作者 / 时间 / 浏览量 —— 与参照页同序 */
+  const chips = ['<span class="k">板块</span><span class="rmv-chip">' + esc(srcN) + '</span>'];
+  if (x.author) chips.push('<span class="k">原作者</span><b>' + esc(x.author) + '</b>');
+  if (x.src && /Thunderstore/.test(x.src)) chips.push('<span>' + esc(x.src) + '</span>');
+  const when = rmvFmtTs(x.ut || x.ct);
+  if (when) chips.push('<span>' + esc(when) + '</span>');
+  if (Number(x.pv) > 0) chips.push('<span title="浏览量">👁 ' + nf(x.pv) + '</span>');
+  h += '<div class="rmv-chips">' + chips.join('<span class="dot">·</span>') + '</div>';
+
+  /* ③ 原链：优先给**第一条下载链**（参照页那行就是网盘直链），没有才给源站帖 */
+  let rawUrl = '';
+  if (Array.isArray(x.links) && x.links.length) rawUrl = (x.links[0] || {}).url || '';
+  if (!rawUrl) rawUrl = x.url || '';
+  if (rawUrl) {
+    h += '<a class="rmv-url" href="' + esc(rawUrl) + '" target="_blank" rel="noopener noreferrer">'
+      + esc(rawUrl) + '</a>';
+  }
+
+  /* ④ 正文：帖子类有 content 全文；结构化来源如实说「没有正文」 */
+  const content = String(x.content || x.intro || x.desc || '').trim();
+  if (content) {
+    h += '<div class="rmv-doc">' + rmvDoc(content) + '</div>';
+  } else if (['mod', 'jidi', 'ts'].indexOf(rmSrc) >= 0) {
+    h += '<div class="rmv-doc"><p style="color:#94a3b8">这一条来自 ' + esc(srcN)
+      + '，源站没有正文段落 — 下面的字段与链接就是它的全部内容。</p></div>';
+  }
+
+  /* ⑤ 游侠存档等来源的「安装步骤」是结构化数组（head + text），按同样的小节样式渲染 */
+  const steps = Array.isArray(x.steps) ? x.steps : [];
+  if (steps.length) {
+    h += '<div class="rmv-doc">' + steps.map((s) => (s && (s.head || s.text))
+      ? '<h5>' + rmvInline(s.head || '') + '</h5><p>' + rmvInline(s.text || '') + '</p>' : '').join('') + '</div>';
+  }
+
+  /* ⑥ 游戏截图（游侠存档 57% 有）：三列缩略，点开原图 */
+  const shots = Array.isArray(x.shots) ? x.shots.filter((u) => u && /^https?:/i.test(String(u))) : [];
+  if (shots.length) {
+    h += '<div class="rmv-shots">' + shots.slice(0, 9).map((u) =>
+      '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">'
+      + '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.parentNode.style.display=\'none\'"></a>').join('')
+      + '</div>';
+  }
+
+  /* ⑦ 字段：只列有值的（空值不占位，避免一屏「—」） */
+  const kv = [];
+  const push = (k, v) => {
+    if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return;
+    kv.push('<div><i>' + esc(k) + '</i><b>' + esc(String(v)) + '</b></div>');
+  };
+  push('类型', x.kind === 'modifier' ? '修改器' : (x.kind === 'mod' ? 'MOD' : ''));
+  /* ★ v10.97：0 值不占位 —— 「收藏 0」不是信息，是噪声（与「空值不占位」同一条口径） */
+  push('收藏', Number(x.favors) || '');
+  push('版本', (x.extra && x.extra.version) || x.version);
+  push('下载量', (x.extra && x.extra.downloads) || x.downloads);
+  push('体积', (x.extra && x.extra.size) || x.size);
+  push('发布日期', x.date);
+  push('来源', x.source || x.src);
+  push('Steam AppID', x.steamId);
+  push('匹配依据', x.matchBasis);
+  if (x.extra && x.extra.adult) kv.push('<div><i>标记</i><b>18+</b></div>');
+  if (kv.length) h += '<div class="rmv-sec"><h4>字段</h4><div class="kv">' + kv.join('') + '</div></div>';
+
+  /* ⑧ 数组字段（存档模块的路径 / 注册表 / 云平台）：逐行铺开，不折成逗号串
+   * ★ v10.97 修：`paths` 的元素是**对象**（{raw, shown, notes, tags}），
+   *   老代码直接 `String(s)` ⇒ 弹窗里 44 行全是「[object Object]」（显示不报错，最难发现那种）。
+   *   ⇒ 统一过一层 fmt：对象优先取 `shown`（已把 `<base>` 换成人话），其次 `raw`。
+   *   ⚠️ 别只改 paths 不改 regs —— 两个字段的形状由同一份 Ludusavi 数据决定，随时可能一起变。 */
+  const arrText = (s) => {
+    if (s && typeof s === 'object') return String(s.shown || s.raw || s.path || '');
+    return String(s == null ? '' : s);
+  };
+  const arrSec = (name, arr) => {
+    const a = Array.isArray(arr) ? arr.map(arrText).filter((s) => String(s || '').trim()) : [];
+    if (!a.length) return '';
+    return '<div class="rmv-sec"><h4>' + name + '（' + a.length + '）</h4><div class="rmv-pre">'
+      + a.map((s) => esc(s)).join('\n') + '</div></div>';
+  };
+  h += arrSec('存档路径', x.paths);
+  h += arrSec('注册表', x.regs);
+  h += arrSec('云存档平台', x.cloud);
+
+  /* ⑨ 链接：mod 的 x.links 带 kind（迅雷网盘 / 夸克 / 其他），比列表行的单条链接全 */
+  let links = [];
+  if (Array.isArray(x.links) && x.links.length) {
+    links = x.links.map((l) => ({ label: l.kind || l.label || l.url, url: l.url, kind: l.kind }));
+  } else if (Array.isArray(r.links)) {
+    links = r.links.slice();
+  }
+  if (x.url && !links.some((l) => l.url === x.url)) links.unshift({ label: '原帖', url: x.url, kind: '源站' });
+  if (links.length) {
+    h += '<div class="rmv-sec"><h4>链接（' + links.length + '）</h4><div class="rmv-links">'
+      + links.map((l) => '<div class="rmv-l">'
+        + (l.kind ? '<span class="k">' + esc(l.kind) + '</span>' : '')
+        + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.label || l.url)
+        + ' ↗</a></div>').join('')
+      + '</div></div>';
+  }
+
+  $('rmvBody').innerHTML = h;
+  $('rmvBody').scrollTop = 0;
+  $('rmView').classList.add('on');
+}
+function rmvClose() { $('rmView').classList.remove('on'); }
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') rmvClose();
+});
+
+/* 点资源行的游戏 → 打开编辑弹窗（资源 + 备注 + 上下架）。
+ * 为什么绕一次 openEdit：弹窗吃的是 `window.__items[i]` 那种完整库行，
+ * 资源行只有 gameId。补一次 /api/admin/game 拿库内真值再复用 —— 四个模块零分叉。 */
+async function openGameById(gid, title) {
+  if (!gid) return toast('该条目未匹配到游戏，无法跳转');
+  const j = await api('/api/admin/game?id=' + encodeURIComponent(gid));
+  if (!j.ok) return toast('游戏不在库内：' + (title || gid));
+  const st = j.state || {};
+  window.__items = window.__items || [];
+  const idx = window.__items.length;
+  window.__items.push(Object.assign({}, j.game, { note: st.note, hidden: st.hidden, cold: st.cold }));
+  openEdit(idx);
+}
+
+/* ★ v10.107：模块页签（一级）。数字取 MOD_CNT，取不到就只显示名字。 */
+function paintModTabs() {
+  const el = $('rmModTabs');
+  if (!el) return;                       /* 老缓存里的 DOM 可能还没这个节点 */
+  el.innerHTML = Object.keys(RM).map((k) =>
+    '<button class="mtab mod' + (k === rmMod ? ' on' : '') + '" onclick="modPick(\'' + k + '\')">'
+    + esc(RM[k].label)
+    + (MOD_CNT && MOD_CNT[k] != null ? '<b class="cnt">' + nf(MOD_CNT[k]) + '</b>' : '')
+    + '</button>').join('');
+}
+/* 切模块 = 换 hash，整条链路（标题 / 面包屑 / section / 表格 / 子源）都走 go()，
+   不另写一套 —— 否则「点菜单」和「点页签」两条路径早晚会不一致。 */
+function modPick(k) {
+  if (!RM[k]) return;
+  go(k === 'base' ? 'rm' : 'rm-' + k);
+}
+function crmOf(k) {
+  const srcs = (RM[k] || {}).srcs || [];
+  return '内容 / ' + ((RM[k] || {}).label || '资源') + (srcs.length ? ' · ' + srcs.map((s) => s[1]).join(' · ') : '');
+}
+
+function resmSearch() { rmOff = 0; rmQ = $('rq').value.trim(); resmReload(); }
+function resmSrcPick(k) { rmSrc = k; rmOff = 0; resmReload(); }
+$('rq').addEventListener('keydown', (e) => { if (e.key === 'Enter') resmSearch(); });
+
+async function resmReload() {
+  const mod = RM[rmMod];
+  if (!mod) return;
+  if (!rmSrc || !mod.srcs.some(([k]) => k === rmSrc)) rmSrc = mod.srcs[0][0];
+  const def = SRC_DEF[rmSrc];
+  if (!def) return;
+
+  /* 一级页签（模块）先对齐 —— 子源页签只在当前模块内变化 */
+  paintModTabs();
+  /* 页内子源切换条（替代原来的 <select>：一屏能看全，不用点开才知道有几个源） */
+  $('rmTabs').innerHTML = mod.srcs.map(([k, l]) =>
+    '<button class="mtab' + (k === rmSrc ? ' on' : '') + '" onclick="resmSrcPick(\'' + k + '\')">' + esc(l) + '</button>').join('');
+
+  const colspan = def.cols.length + 3;
+  $('rmHead').innerHTML = '<th>游戏（主键）</th><th>条目</th>'
+    + def.cols.map(([n, w]) => '<th' + (w ? ' style="width:' + w + '"' : '') + '>' + esc(n) + '</th>').join('')
+    /* ★ v10.107：操作列要同时装「查看」+「Repack 页 ↗」，120px 装不下 ⇒ 每行折成两行、
+       整张表被撑高一倍（看着像行高设错了）。两个按钮并排实测需要 ~168px。 */
+    + '<th style="width:178px">操作</th>';
+  $('rmRows').innerHTML = '<tr><td colspan="' + colspan + '" class="mut" style="padding:18px">加载中…</td></tr>';
+
+  const j = await api(def.url(rmQ, rmOff));
+  if (!j.ok) {
+    const msg = j.needAuth ? '需要登录（右上角）' : (j.error || '加载失败');
+    $('rmRows').innerHTML = '<tr><td colspan="' + colspan + '" class="mut" style="padding:18px">' + esc(msg) + '</td></tr>';
+    $('rmEmpty').style.display = 'none';
+    $('rmPgBar').innerHTML = '';
+    return;
+  }
+  rmTotal = j.total || 0;
+  /* ★ v10.94：「查看」弹窗要渲染**条目完整内容**，所以原始对象必须留在行上。
+     之前 def.norm 只挑 gameId/title/cells/links 四个字段，正文（content）、
+     体积、版本、注册表路径全被丢掉 ⇒ 弹窗写不出来，只能给一个「原帖 ↗」。
+     保留 raw 不额外发请求：mods 列表本身就带 content（实测 8,942 / 8,943 条有全文）。 */
+  const items = (j.items || []).map((x) => Object.assign(def.norm(x), { raw: x }));
+  if (!items.length) {
+    $('rmRows').innerHTML = '';
+    $('rmEmpty').style.display = 'block';
+    $('rmEmpty').textContent = '没有符合条件的条目' + (rmQ ? '（搜索词：' + rmQ + '）' : '');
+  } else {
+    $('rmEmpty').style.display = 'none';
+    window.__rmItems = items;
+    $('rmRows').innerHTML = items.map((r, i) => {
+      /* 游戏列：有 gameId 就可点（打开编辑弹窗）；没有就如实写「未匹配」 */
+      const gameCell = r.gameId
+        ? '<span class="lnk" data-gid="' + esc(r.gameId) + '" data-gt="' + esc(r.gameTitle || '') + '">'
+          + esc(r.gameTitle || r.gameId) + '</span><small>' + esc(r.gameId) + '</small>'
+        : '<span class="mut">未匹配</span>';
+      const links = (r.links || []).map((l) =>
+        '<a class="btn sm" style="margin-right:4px" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.label) + ' ↗</a>').join('');
+      /* ★ v10.94：每行一个「查看」→ 弹窗展示这一条的完整内容。
+         「原帖」外链留着（要看源站样式/回帖时用），但正文不再逼用户跳出去看。 */
+      return '<tr class="fxrow">'
+        + '<td>' + gameCell + '</td>'
+        + '<td><div class="tt" title="' + esc(r.title) + '">' + esc(r.title || '—') + '</div></td>'
+        + r.cells.map((c) => '<td class="mut">' + c + '</td>').join('')
+        + '<td><button class="btn sm" data-rmv="' + i + '">查看</button>'
+        + (links ? '<span style="margin-left:5px">' + links + '</span>' : '') + '</td>'
+        + '</tr>';
+    }).join('');
+    document.querySelectorAll('#rmRows [data-rmv]').forEach((b) => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); rmvOpen(+b.dataset.rmv); });
+    });
+  }
+  $('rmHint').textContent = '每一条都锚定游戏 id' + (rmQ ? ' · 搜索「' + rmQ + '」' : '');
+  $('rmPgBar').innerHTML = pagerHtml(rmTotal, RM_LIMIT, rmOff);
+  bindPager($('rmPgBar'), rmTotal, RM_LIMIT, (p) => { rmOff = (p - 1) * RM_LIMIT; resmReload(); });
+}
+
+/* 游戏列点击（事件委托：行是动态渲染的，重绘不重复绑） */
+document.addEventListener('click', (e) => {
+  const s = e.target.closest && e.target.closest('.lnk[data-gid]');
+  if (!s) return;
+  openGameById(s.dataset.gid, s.dataset.gt);
+});
+function toggleGroup() { groupSame = !groupSame; $('cGroup').classList.toggle('on', groupSame); offset = 0; reload(); }
+function toggleNote() { onlyNote = !onlyNote; $('cNote').classList.toggle('on', onlyNote); offset = 0; reload(); }
+function toggleCold() {
+  /* ★ v10.112：原来是纯装饰 —— 只 toggle 自己的 .on 类，既不改请求（两个分支都发 cold=0），
+     也不 reload，toast 还谎称「仅切换高亮」（代码里没有任何高亮逻辑）。
+     现在与 toggleGroup / toggleNote 同一套：改状态 → 归零页码 → 重新请求。 */
+  showCold = !showCold;
+  $('cCold').classList.toggle('on', showCold);
+  offset = 0; reload();
+  toast(showCold ? '已含冷门行（全量口径）' : '已隐藏冷门行（与前台口径一致）');
+}
+
+/* ═══════════ 资料 / 爬虫字段弹窗 ═══════════
+ * 一个弹窗两种形态（由 pfMode 决定显示哪些组）：
+ *   pages → 标题 / 封面 / 热度 / 平台链接（爬回来的东西）
+ *   games → 标题 / 封面 / 简介 / 类型 / 厂商 / 发行 / 发售日 / 别名（整理后的资料）
+ * 表单语义：**留空 = 用爬虫值**（提交空字符串 ⇒ 服务端删掉该字段的覆盖）。
+ * 所以输入框只回填「已有的覆盖值」，爬取值放 placeholder —— 用户一眼能看出
+ * 「这一项我改过没有」，也不会因为原样提交一次就把爬虫值冻成人工值。 */
+let pfMode = 'games', pfItem = null, pfData = null, pfOp = 'clear';
+
+const PF_IDS = { title: 'pfTitleIn', cover: 'pfCoverIn', hot: 'pfHotIn', url: 'pfUrlIn', intro: 'pfIntroIn', genres: 'pfGenresIn', developer: 'pfDevIn', publisher: 'pfPubIn', releaseDate: 'pfDateIn', aliases: 'pfAliasIn' };
+const PF_OVR = { title: 'pfTitleOvr', cover: 'pfCoverOvr', hot: 'pfHotOvr', url: 'pfUrlOvr', intro: 'pfIntroOvr', genres: 'pfGenresOvr', developer: 'pfDevOvr', publisher: 'pfPubOvr', releaseDate: 'pfDateOvr', aliases: 'pfAliasOvr' };
+
+function pfShowGroups(mode) {
+  const show = (ids, on) => ids.forEach((id) => { const e = $(id); if (e) e.style.display = on ? '' : 'none'; });
+  show(['pfCrawl'], mode === 'pages');
+  show(['pfData1', 'pfData2', 'pfData3', 'pfData4'], mode === 'games');
+}
+
+/** ★ v10.106：弹窗内切形态。
+ *  只改「显示哪些字段」+「页签高亮」+ 元信息那两个字，**不动数据** ——
+ *  两种形态读的是同一份 pfData，切回来不会重新请求（也不会把没保存的输入清掉）。 */
+function pfSetMode(mode) {
+  if (mode !== 'games' && mode !== 'pages') return;
+  pfMode = mode;
+  pfShowGroups(mode);
+  document.querySelectorAll('#pfTabs .pftab').forEach((t) => t.classList.toggle('on', t.dataset.m === mode));
+}
+
+async function openProf(i, mode, ev) {
+  if (ev) ev.stopPropagation();
+  /* ★ v10.106：合并后只有一份列表（__items），两种形态共用。 */
+  const list = window.__items || [];
+  const g = list[i];
+  if (!g) return;
+  pfMode = mode; pfItem = g; pfData = null; pfOp = 'clear';
+  pfShowGroups(mode);
+  document.querySelectorAll('#pfTabs .pftab').forEach((t) => t.classList.toggle('on', t.dataset.m === mode));
+  $('pmask').classList.add('on');
+  $('pfCover').src = g.cover || '';
+  $('pfCover').style.visibility = g.cover ? 'visible' : 'hidden';
+  $('pfTitle').textContent = g.title || '—';
+  /* ★ v10.106：形态那两个字交给页签（.pftabs）去说，meta 里再说一遍是重复信息 */
+  $('pfMeta').innerHTML = '<span class="code">' + esc(g.id) + '</span>' + srcBdgOf(g.source);
+  $('pfStat').textContent = '读取中…';
+  /* 先用列表值占位（避免打开瞬间一片空），真值到了再覆盖 */
+  for (const f of Object.keys(PF_IDS)) { const el = $(PF_IDS[f]); if (el) el.value = ''; }
+  $('pfNote').value = g.note || '';
+
+  const j = await api('/api/admin/profile?id=' + encodeURIComponent(g.id));
+  if (!j.ok) { $('pfStat').textContent = '读取失败：' + (j.error || (j.needAuth ? '需要登录' : '')); return; }
+  pfData = j;
+  pfFill(j);
+  $('pfStat').textContent = '资料 ' + (j.completeness || 0) + '/7 · ' + (mode === 'pages' ? '编辑爬虫字段' : '编辑游戏资料');
+}
+
+/** 回填：输入框放「覆盖值」，placeholder 放「爬取值」 */
+function pfFill(j) {
+  const p = j.profile || {};
+  const raw = j.raw || {};
+  const eff = j.effective || {};
+  const brief = (v) => {
+    const s = Array.isArray(v) ? v.join(', ') : String(v == null ? '' : v);
+    return s.length > 46 ? s.slice(0, 46) + '…' : s;
+  };
+  for (const f of Object.keys(PF_IDS)) {
+    const el = $(PF_IDS[f]); if (!el) continue;
+    const has = p[f] != null;
+    el.value = has ? (Array.isArray(p[f]) ? p[f].join(', ') : String(p[f])) : '';
+    el.placeholder = has ? '' : ('爬取值：' + (brief(raw[f]) || '空——可以在这里补'));
+    const badge = $(PF_OVR[f]);
+    if (badge) badge.innerHTML = has ? '<span class="ovr">人改</span>' : '';
+  }
+  $('pfTitle').textContent = eff.title || '—';
+  $('pfCover').src = eff.cover || '';
+  $('pfCover').style.visibility = eff.cover ? 'visible' : 'hidden';
+  $('pfNote').value = (j.state || {}).note || '';
+  pfOp = (j.state || {}).override || 'clear';
+  paintPfSeg();
+  $('pfSegHint').textContent = (j.state || {}).cold
+    ? '当前规则判定为冷门（hot=0 且非近 90 天新游）⇒ 默认被隐藏'
+    : '当前规则判定为可见';
+}
+
+function pfPreview() {
+  const u = $('pfCoverIn').value.trim();
+  if (!u) { $('pfCover').src = (pfData && pfData.effective || {}).cover || ''; return; }
+  $('pfCover').src = u; $('pfCover').style.visibility = 'visible';
+}
+
+function paintPfSeg() {
+  document.querySelectorAll('#pfSeg button').forEach((b) => b.classList.toggle('on', b.dataset.op === pfOp));
+  $('pfSegHint').textContent = pfOp === 'clear' ? '跟随规则 = 按冷门口径自动判定'
+    : pfOp === 'show' ? '强制显示：即使 hot=0 也出现在列表' : '强制隐藏：无论热度如何都不出现在列表';
+}
+document.querySelectorAll('#pfSeg button').forEach((b) => b.addEventListener('click', () => { pfOp = b.dataset.op; paintPfSeg(); }));
+
+function closeProf() { $('pmask').classList.remove('on'); pfItem = null; pfData = null; }
+
+async function saveProf() {
+  if (!pfItem) return;
+  const id = pfItem.id;
+  const fields = pfMode === 'pages'
+    ? ['title', 'cover', 'hot', 'url']
+    : ['title', 'cover', 'intro', 'genres', 'developer', 'publisher', 'releaseDate', 'aliases'];
+  const patch = {};
+  for (const f of fields) { const el = $(PF_IDS[f]); if (el) patch[f] = el.value; }
+  const note = $('pfNote').value.trim();
+
+  const r1 = await api('/api/admin/profile', { method: 'POST', body: JSON.stringify({ id, patch }) });
+  if (!r1.ok) return toast('资料保存失败：' + (r1.error || (r1.needAuth ? '需要登录' : '未知')));
+  const r2 = await api('/api/admin/note', { method: 'POST', body: JSON.stringify({ id, note }) });
+  if (!r2.ok) return toast('备注保存失败：' + (r2.error || '未知'));
+  const initOp = (pfData && pfData.state && pfData.state.override) || 'clear';
+  if (pfOp !== initOp) {
+    const r3 = await api('/api/admin/hide-overrides', { method: 'POST', body: JSON.stringify({ id, op: pfOp }) });
+    if (!r3.ok) return toast('状态保存失败：' + (r3.error || '未知'));
+  }
+  toast('已保存' + (r1.touched ? '（改 ' + r1.touched + ' 项）' : '（无变化）'));
+  closeProf();
+  reload();   /* v10.106：两种形态共用一张表，刷新也就一条路 */
+  loadStats();
+}
+
+/* ═══════════ 编辑弹窗 ═══════════ */
+async function openEdit(i, ev) {
+  if (ev) ev.stopPropagation();
+  const g = (window.__items || [])[i];
+  if (!g) return;
+  curItem = g; segOp = 'clear';
+  $('mCover').src = g.cover || '';
+  $('mCover').style.visibility = g.cover ? 'visible' : 'hidden';
+  $('mTitle').textContent = g.title || '—';
+  $('mMeta').innerHTML = '<span class="code">' + esc(g.id) + '</span>'
+    + (/xd/i.test(g.source || '') ? '<span class="bdg b-xd">XDGAME</span>' : '<span class="bdg b-jd">机地</span>')
+    + '<span class="mut">更新 ' + ago(g.updatedTs) + '</span>';
+  $('mNote').value = g.note || '';
+  $('mInfo').innerHTML = '<div><i>标题</i><b>' + esc(g.title || '—') + '</b></div>'
+    + '<div><i>热度</i><b>' + nf(g.hot) + '</b> · <i style="min-width:auto">推荐分</i> <b>' + nf(g.score) + '</b></div>'
+    + '<div><i>容量</i><b>' + esc(g.size || '—') + '</b></div>'
+    + '<div><i>类型</i><b>' + esc((g.genres || []).join(' / ') || '—') + '</b></div>'
+    + '<div><i>别名</i><b>' + esc(((g.aliases || []).slice(0, 3).join(' / ')) || '—') + '</b></div>'
+    + '<div><i>列表态</i><b>' + (g.hidden ? '隐藏' : '可见') + '</b>' + (g.cold ? ' · 规则判为冷门' : '') + '</div>';
+  paintSeg();
+  $('mRes').innerHTML = '<div class="mut">加载资源中…</div>';
+  $('mStat').textContent = '';
+  $('mask').classList.add('on');
+
+  const j = await api('/api/admin/game?id=' + encodeURIComponent(g.id));
+  if (!j.ok) { $('mRes').innerHTML = '<div class="mut">资源加载失败：' + esc(j.error || '') + (j.needAuth ? '（右上角登录）' : '') + '</div>'; return; }
+  renderRes(j);
+  /* 用服务端真值回填状态（铁律 154：不猜） */
+  const st = j.state || {};
+  cur = j;
+  segOp = st.override || 'clear';
+  paintSeg();
+  if (st.note != null) $('mNote').value = st.note;
+}
+
+function paintSeg() {
+  document.querySelectorAll('#mSeg button').forEach((b) => b.classList.toggle('on', b.dataset.op === segOp));
+  $('mSegHint').textContent = segOp === 'clear' ? '跟随规则 = 按冷门口径自动判定'
+    : segOp === 'show' ? '强制显示：即使 hot=0 也出现在列表' : '强制隐藏：无论热度如何都不出现在列表';
+}
+document.querySelectorAll('#mSeg button').forEach((b) => b.addEventListener('click', () => { segOp = b.dataset.op; paintSeg(); }));
+
+function renderRes(j) {
+  const R = j.resources || {};
+  /* 资源条目字段口径（实测核对，不能凭猜）：
+   *   resGroups.slimItem → { title, page(原帖), links:[{label,url,cls}], date, ... }  ← 没有 url 字段
+   *   各直链源（fling/savesYx/gt/fitgirl/tsmods）→ 各自 slim，用 url || page || links[0].url 兜底取打开地址
+   *   ⇒ 统一走 pickUrl()，避免某一源缺 url 时整行变成死链。 */
+  const pickUrl = (x) => x.url || x.page || (x.link) || ((x.links && x.links[0] && x.links[0].url) || '') || '#';
+  const sec = (title, n, body) => n ? '<div class="rgrp"><h4>' + esc(title) + ' <em>' + n + '</em></h4>' + body + '</div>' : '';
+  const linkRow = (x, sub) => {
+    const lk = (x.links || []).map((l) => l.label).filter(Boolean).join(' / ');
+    return '<div class="ritem"><a href="' + esc(pickUrl(x)) + '" target="_blank" rel="noopener">' + esc(x.title || x.name || x.label || '打开') + '</a>'
+      + (sub || lk ? '<span>' + esc([sub, lk].filter(Boolean).join(' · ')) + '</span>' : '') + '</div>';
+  };
+
+  let html = '';
+  /* 机地帖三分类 */
+  const rg = R.resGroups || {};
+  const mk = (arr, nm) => sec(nm, (arr || []).length, '<div class="rlist">' + (arr || []).map((x) => linkRow(x, x.date || '')).join('') + '</div>');
+  html += mk(rg.mod, '机地帖 · MOD');
+  html += mk(rg.saves, '机地帖 · 存档');
+  html += mk(rg.trainers, '机地帖 · 修改器');
+  /* 修改器直链 */
+  html += sec('FLiNG 修改器', (R.fling || []).length, '<div class="rlist">' + (R.fling || []).slice(0, 8).map((x) => '<div class="ritem"><a href="' + esc(pickUrl(x)) + '" target="_blank" rel="noopener">' + esc(x.title || x.name || 'FLiNG') + '</a>' + (x.dl ? '<span>直链</span>' : '') + '</div>').join('') + '</div>');
+  html += sec('云存档（游侠）', (R.savesYx || []).length, '<div class="rlist">' + (R.savesYx || []).slice(0, 8).map((x) => linkRow(x, x.date || '')).join('') + '</div>');
+  html += sec('GTrainers', (R.gt || []).length, '<div class="rlist">' + (R.gt || []).slice(0, 8).map((x) => linkRow(x, '')).join('') + '</div>');
+  html += sec('FitGirl Repack', (R.fitgirl || []).length, '<div class="rlist">' + (R.fitgirl || []).map((x) => '<div class="ritem"><a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title || x.slug) + '</a>' + (x.adult ? '<span>18+</span>' : '') + '</div>').join('') + '</div>');
+  html += sec('Thunderstore', (R.tsmods || []).length, '<div class="rlist">' + (R.tsmods || []).slice(0, 8).map((x) => '<div class="ritem"><span>' + esc(x.name) + '</span><span>' + esc(x.version || '') + '</span></div>').join('') + '</div>');
+
+  $('mRes').innerHTML = html || '<div class="mut">该游戏暂无可展示的资源</div>';
+
+  /* 底部统计：资源合计 + FitGirl 下载源入口 */
+  const fg = (R.fitgirl || [])[0];
+  $('mStat').innerHTML = '资源合计 ' + nf(((rg.mod || []).length + (rg.saves || []).length + (rg.trainers || []).length
+    + (R.fling || []).length + (R.savesYx || []).length + (R.gt || []).length + (R.tsmods || []).length))
+    + (fg ? ' · <a href="/api/fitgirl/parts?slug=' + encodeURIComponent(fg.slug) + '" target="_blank">查看下载源 JSON ↗</a>' : '');
+}
+
+function closeModal() { $('mask').classList.remove('on'); cur = null; curItem = null; }
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  /* v10.91：登录弹窗在最上层，Esc 先关它 */
+  if ($('lmask').classList.contains('on')) closeLogin();
+  else if ($('pmask').classList.contains('on')) closeProf();
+  else closeModal();
+});
+
+async function saveAll() {
+  if (!curItem) return;
+  const id = curItem.id;
+  const note = $('mNote').value.trim();
+  let changed = 0;
+  const r1 = await api('/api/admin/note', { method: 'POST', body: JSON.stringify({ id, note }) });
+  if (!r1.ok) { toast('备注保存失败：' + (r1.error || (r1.needAuth ? '需要登录' : '未知'))); return; }
+  changed++;
+  const initOp = (cur && cur.state && cur.state.override) || 'clear';
+  if (segOp !== initOp) {
+    const r2 = await api('/api/admin/hide-overrides', { method: 'POST', body: JSON.stringify({ id, op: segOp }) });
+    if (!r2.ok) { toast('状态保存失败：' + (r2.error || '未知')); return; }
+    changed++;
+  }
+  toast('已保存' + (changed > 1 ? '（备注 + 状态）' : '（备注）'));
+  curItem.note = note;
+  reload();
+  loadStats();
+  closeModal();
+}
+
+/* ═══════════ 日志 ═══════════ */
+async function loadLog() {
+  const j = await api('/api/admin/log?limit=100');
+  if (!j.ok) {
+    $('logList').innerHTML = '<div class="mut">读取失败：' + esc(j.error || '') + (j.needAuth ? '（需登录）' : '') + '</div>';
+    $('logInfo').textContent = '—';
+    return;
+  }
+  $('logInfo').textContent = '共 ' + nf(j.total) + ' 条 · 显示最近 ' + (j.items || []).length;
+  $('logList').innerHTML = (j.items || []).length ? (j.items || []).map((x) =>
+    '<div class="log-row"><div class="t">' + new Date(x.ts).toLocaleString('zh-CN', { hour12: false }) + '</div>'
+    + '<div>' + esc(x.title || '—') + ' <span class="code">' + esc(x.id || '') + '</span></div>'
+    + '<div><span class="bdg ' + (x.op === 'hide' ? 'b-hide' : x.op === 'clear' ? 'b-cold' : 'b-vis') + '">' + esc(x.op) + '</span></div>'
+    + '<div class="mut">' + esc(x.via || '—') + '</div></div>').join('')
+    : '<div class="empty">还没有管理操作记录</div>';
+}
+async function loadSetLog() {
+  const j = await api('/api/admin/log?limit=5');
+  $('setLog').innerHTML = j.ok && (j.items || []).length
+    ? j.items.map((x) => '<div class="log-row"><div class="t">' + new Date(x.ts).toLocaleString('zh-CN', { hour12: false }) + '</div><div>' + esc(x.title || x.id) + '</div><div><span class="code">' + esc(x.op) + '</span></div><div class="mut">' + esc(x.via || '') + '</div></div>').join('')
+    : '<div class="mut">无记录' + (j.needAuth ? '（需令牌）' : '') + '</div>';
+}
+
+/* ═══════════ 磁力下载（v10.103 · Komo-Magnet 管理端）═══════════
+ * 契约唯一真源：/api/admin/download/meta（端口表 / secret / 工具名 / 安装包）。
+ * ★★ 数据面**不经过服务端**：线上打开管理页时，服务端 127.0.0.1 是容器自己；
+ *    aria2 只跑在用户机器上 ⇒ 探活与任务控制必须由浏览器直连本机。
+ *    （v10.102 已在真实 Chromium 实测：HTTPS 页面 fetch 到 127.0.0.1 返回 200 / 6ms，
+ *      事件流里会伴随一次 ERR_BLOCKED_BY_PRIVATE_NETWORK_ACCESS_CHECKS 但最终放行。）
+ * ★ 工具端未交付时本页**不报错**：探不到就画「未接入」空态 + 接口说明，
+ *   等服务端 meta 里的 tool.setup 填上后，安装入口自动出现。 */
+const DL_PORTS_DEF = [6800, 6801, 6802, 6803, 6804, 6805];
+const DL_SECRET_DEF = 'komomagnet-local';
+const DL_PROBE_MS = 350, DL_CALL_MS = 4000, DL_MISS_TTL = 20000;
+const DL_KEYS = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed',
+  'connections', 'errorMessage', 'files', 'bittorrent'];
+const DL = {
+  ports: DL_PORTS_DEF.slice(), secret: DL_SECRET_DEF,
+  port: 0, version: '', missAt: 0, meta: null, cfg: null,
+  act: [], wait: [], stop: [], tab: 'active',
+  timer: 0, busy: false,
+};
+
+/* JSON-RPC 单发：超时/断连一律 resolve(null)，绝不 reject ——
+ * 调用方要判的是「有没有连上」，不是拿异常做流程控制。 */
+function dlRpc(port, method, params, ms) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = setTimeout(() => {
+      if (ctrl) { try { ctrl.abort(); } catch (e) { /* 已结束 */ } }
+      finish(null);
+    }, ms || DL_CALL_MS);
+    fetch('http://127.0.0.1:' + port + '/jsonrpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 'ghadm', method,
+        params: ['token:' + DL.secret].concat(params || []),
+      }),
+      signal: ctrl ? ctrl.signal : undefined,
+    }).then((r) => r.json())
+      .then((j) => finish(j && j.result !== undefined ? j.result : null))
+      .catch(() => finish(null));
+  });
+}
+
+/* 并发探整个端口表，命中即缓存（含版本号，用于状态卡）。 */
+async function dlProbe(force) {
+  if (DL.port && !force) return DL.port;
+  if (!force && Date.now() - DL.missAt < DL_MISS_TTL) return 0;
+  const hits = await Promise.all(DL.ports.map((p) => dlRpc(p, 'aria2.getVersion', [], DL_PROBE_MS)
+    .then((r) => (r && r.version) ? { p, v: String(r.version) } : null)));
+  const hit = hits.filter(Boolean)[0] || null;
+  DL.port = hit ? hit.p : 0;
+  DL.version = hit ? hit.v : '';
+  if (!DL.port) DL.missAt = Date.now();
+  return DL.port;
+}
+
+function dlBytes(n) {
+  const v = Number(n) || 0;
+  if (v >= 1073741824) return (v / 1073741824).toFixed(2) + ' GB';
+  if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB';
+  if (v >= 1024) return Math.round(v / 1024) + ' KB';
+  return Math.round(v) + ' B';
+}
+function dlEta(t) {
+  const total = Number(t.totalLength) || 0;
+  const done = Number(t.completedLength) || 0;
+  const sp = Number(t.downloadSpeed) || 0;
+  if (!total || !sp || done >= total) return '—';
+  const s = Math.round((total - done) / sp);
+  if (s < 60) return s + ' 秒';
+  if (s < 3600) return Math.round(s / 60) + ' 分钟';
+  return (s / 3600).toFixed(1) + ' 小时';
+}
+/* 任务名：BT 优先取种子名，普通直链取文件名，都没有退 gid。
+ * ★ 不把完整落盘路径打到界面上（那是本机绝对路径，截图外发就泄露用户名）。 */
+function dlName(t) {
+  const bt = t && t.bittorrent && t.bittorrent.info && t.bittorrent.info.name;
+  if (bt) return String(bt);
+  const f = (t && t.files && t.files[0]) || null;
+  if (f && f.path) return String(f.path).split(/[\\/]/).pop();
+  return (t && t.gid) || '—';
+}
+function dlStateText(st) {
+  return ({ active: '下载中', waiting: '排队', paused: '已暂停', complete: '已完成',
+    error: '失败', removed: '已移除' })[String(st)] || (st || '—');
+}
+function dlBadgeCls(st) {
+  if (st === 'active') return 'b-vis';
+  if (st === 'complete') return 'b-vis';
+  if (st === 'error') return 'b-hide';
+  if (st === 'paused') return 'b-note';
+  return 'b-cold';
+}
+
+async function dlBootstrap(force) {
+  if (!DL.meta || force) {
+    const j = await api('/api/admin/download/meta');
+    if (j && j.ok) {
+      DL.meta = j;
+      if (Array.isArray(j.ports) && j.ports.length) DL.ports = j.ports.slice();
+      if (j.config && j.config.secret) DL.secret = j.config.secret;
+      DL.cfg = j.config || null;
+    }
+  }
+  if (!DL.cfg) {
+    const c = await api('/api/admin/download/config');
+    if (c && c.ok) DL.cfg = c.config;
+  }
+  dlFillCfg();
+}
+
+function dlEnter() {
+  dlPaintTabs();
+  dlBootstrap().then(() => dlRefresh(true));
+  /* 轮询只在下载页活着时跑（go() 切走会 dlLeave）。2 秒是「看着像实时」与
+   * 「每秒六次本机 RPC」之间的折中 —— 不是越快越好。 */
+  if (DL.timer) clearInterval(DL.timer);
+  DL.timer = setInterval(() => { if (DL.port) dlRefresh(false); }, 2000);
+}
+function dlLeave() {
+  if (DL.timer) { clearInterval(DL.timer); DL.timer = 0; }
+}
+
+async function dlRefresh(force) {
+  if (DL.busy && !force) return;
+  DL.busy = true;
+  try {
+    const p = await dlProbe(!!force);
+    if (!p) { DL.act = []; DL.wait = []; DL.stop = []; dlPaintAll(null); return; }
+    const r = await Promise.all([
+      dlRpc(p, 'aria2.tellActive', [DL_KEYS]),
+      dlRpc(p, 'aria2.tellWaiting', [0, 60, DL_KEYS]),
+      dlRpc(p, 'aria2.tellStopped', [0, 60, DL_KEYS]),
+      dlRpc(p, 'aria2.getGlobalStat', []),
+    ]);
+    DL.act = Array.isArray(r[0]) ? r[0] : [];
+    DL.wait = Array.isArray(r[1]) ? r[1] : [];
+    DL.stop = Array.isArray(r[2]) ? r[2] : [];
+    dlPaintAll(r[3] || null);
+  } finally {
+    DL.busy = false;
+  }
+}
+
+function dlPaintAll(gs) {
+  const online = !!DL.port;
+  const sp = gs ? (Number(gs.downloadSpeed) || 0) : 0;
+  const done = DL.stop.filter((x) => x.status === 'complete').length;
+  const cards = [
+    ['下载器', online ? '已连接' : '未接入', online ? 'ok' : 'dan',
+      online ? ('端口 ' + DL.port + (DL.version ? ' · v' + DL.version : '')) : '本机 6800–6805 无响应'],
+    ['当前速度', online ? (sp ? dlBytes(sp) + '/s' : '0') : '—', '', '限速 ' + ((DL.cfg && DL.cfg.maxSpeed) || '不限')],
+    ['活动', online ? nf(DL.act.length) : '—', online && DL.act.length ? 'pri' : '', '正在下载'],
+    ['等待', online ? nf(DL.wait.length) : '—', '', '排队 / 已暂停'],
+    ['已完成', online ? nf(done) : '—', '', '本次打开页面后可见'],
+  ];
+  $('dlStats').innerHTML = cards.map(([k, v, cls, em]) =>
+    '<div class="card stat ' + cls + '"><span>' + esc(k) + '</span><b>' + esc(String(v)) + '</b><em>' + esc(em) + '</em></div>').join('');
+
+  /* 导航角标：连不上显示「—」而不是 0 —— 0 会被读成「工具在跑、只是没任务」 */
+  if ($('nDl')) $('nDl').textContent = online ? nf(DL.act.length + DL.wait.length) : '—';
+
+  dlPaintNote(online);
+  dlPaintTabs();
+  dlPaintRows(online);
+
+  $('dlInfo').textContent = online
+    ? ('共 ' + nf(DL.act.length + DL.wait.length + DL.stop.length) + ' 条 · 每 2 秒刷新')
+    : '下载器未接入';
+  $('dlAddBtn').disabled = !online;
+  $('dlAddHint').textContent = online ? ('将加入端口 ' + DL.port) : '未接入：先在任务栏装好并启动 Komo-Magnet';
+}
+
+function dlPaintNote(online) {
+  const el = $('dlNote');
+  const tool = (DL.meta && DL.meta.tool) || {};
+  if (online) {
+    const dir = (DL.cfg && DL.cfg.dir) || '工具默认目录';
+    el.className = 'dlnote ok';
+    el.innerHTML = '<span class="sd on"></span><div><b>' + esc(tool.name || 'Komo-Magnet')
+      + ' 已连接</b> · 端口 ' + DL.port + (DL.version ? ' · v' + esc(DL.version) : '')
+      + '<br>下载落在 <b>' + esc(dir) + '</b>（改动目录在下方「下载器设置」）</div>'
+      + '<span class="sp"></span><button class="btn sm" onclick="dlRefresh(true)">重新探活</button>';
+    return;
+  }
+  el.className = 'dlnote';
+  const setup = tool.setup
+    ? '<a class="btn sm" href="' + esc(tool.setup) + '" download>下载安装包</a>'
+    : '';
+  /* ★ 布局：说明全放左列（flex:1），按钮靠右。
+     v10.103 初版把 setupNote 甩到右侧和「重新探活」并排，实测挤成一行读不通 ——
+     状态说明是「读的」，按钮是「点的」，不该在同一视觉流里。 */
+  el.innerHTML = '<span class="sd off"></span><div style="flex:1;min-width:0">'
+    + '<b>未接入本机下载器</b>：本机 6800–6805 上没探到 '
+    + esc(tool.name || 'Komo-Magnet') + ' 的 RPC。装好并启动后点右边「重新探活」即可，不用刷新页面。'
+    + '<br><span style="opacity:.85">本页不经过服务端：探活是浏览器直连 127.0.0.1，所以线上管理页同样能用。</span>'
+    + (tool.setupNote ? '<br>' + esc(tool.setupNote) : '')
+    + '</div>' + setup
+    + '<button class="btn sm" onclick="dlRefresh(true)">重新探活</button>';
+}
+
+function dlPaintTabs() {
+  const online = !!DL.port;
+  const defs = [['active', '进行中', DL.act.length], ['wait', '等待 / 暂停', DL.wait.length],
+    ['stop', '已完成', DL.stop.length]];
+  $('dlTabs').innerHTML = defs.map(([k, l, n]) =>
+    '<span class="chip' + (DL.tab === k ? ' on' : '') + '" onclick="dlTab(\'' + k + '\')">'
+    + esc(l) + (online ? ' ' + nf(n) : '') + '</span>').join('');
+}
+function dlTab(k) { DL.tab = k; dlPaintTabs(); dlPaintRows(!!DL.port); }
+
+function dlPaintRows(online) {
+  const rows = $('dlRows'), empty = $('dlEmpty');
+  const list = DL.tab === 'active' ? DL.act : (DL.tab === 'wait' ? DL.wait : DL.stop);
+  if (!online) {
+    rows.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = '未接入本机下载器 —— 这里不显示假数据。<br><span class="mut">装好 Komo-Magnet 并启动后任务会自动出现。</span>';
+    return;
+  }
+  if (!list.length) {
+    rows.innerHTML = '';
+    empty.style.display = '';
+    empty.textContent = DL.tab === 'active' ? '当前没有进行中的任务'
+      : (DL.tab === 'wait' ? '队列为空' : '还没有已完成的任务');
+    return;
+  }
+  empty.style.display = 'none';
+  rows.innerHTML = list.map((t) => {
+    const total = Number(t.totalLength) || 0;
+    const done = Number(t.completedLength) || 0;
+    const pct = total ? Math.min(100, done / total * 100) : 0;
+    const barCls = t.status === 'complete' ? ' done' : (t.status === 'error' ? ' err' : '');
+    const ops = [];
+    if (t.status === 'active') ops.push(['暂停', 'pause']);
+    if (t.status === 'paused') ops.push(['继续', 'unpause']);
+    if (t.status !== 'complete') ops.push(['删除', 'remove']);
+    const opHtml = ops.length ? ops.map(([l, o]) =>
+      '<button class="btn sm' + (o === 'remove' ? ' dan' : '') + '" onclick="dlOp(\''
+      + esc(t.gid) + '\',\'' + o + '\')">' + l + '</button>').join('') : '<span class="mut">—</span>';
+    return '<tr class="row">'
+      + '<td><div class="dlnm">' + esc(dlName(t)) + '<small>' + esc(t.gid || '') + '</small></div></td>'
+      + '<td><div class="dlbar' + barCls + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
+      + '<div class="mut" style="margin-top:3px">' + pct.toFixed(1) + '%</div></td>'
+      + '<td class="mut">' + dlBytes(total) + '</td>'
+      + '<td class="mut">' + (t.status === 'active' ? dlBytes(t.downloadSpeed) + '/s' : '—') + '</td>'
+      + '<td class="mut">' + dlEta(t) + '</td>'
+      + '<td><span class="bdg ' + dlBadgeCls(t.status) + '">' + esc(dlStateText(t.status)) + '</span></td>'
+      + '<td><div class="dlops">' + opHtml + '</div></td>'
+      + '</tr>';
+  }).join('');
+}
+
+async function dlAdd() {
+  const el = $('dlUri');
+  const uri = String(el.value || '').trim();
+  if (!uri) { toast('先粘贴一条磁力或直链'); el.focus(); return; }
+  if (!/^(magnet:\?|https?:\/\/)/i.test(uri)) { toast('只接受 magnet: 或 http(s) 链接'); return; }
+  const p = await dlProbe(false);
+  if (!p) { toast('未检测到本机下载器，先装并启动 Komo-Magnet'); return; }
+  let gid = await dlRpc(p, 'aria2.addUri', [[uri]]);
+  if (typeof gid !== 'string' || !gid) {
+    /* 端口可能刚被工具重启换掉 ⇒ 强制重探一次再试，而不是直接报失败 */
+    const p2 = await dlProbe(true);
+    if (p2) gid = await dlRpc(p2, 'aria2.addUri', [[uri]]);
+  }
+  if (typeof gid === 'string' && gid) {
+    el.value = '';
+    DL.tab = 'active';
+    toast('已加入下载队列');
+    dlRefresh(true);
+  } else {
+    toast('加入失败：检查下载器是否在运行');
+  }
+}
+
+async function dlPaste() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) { toast('这个浏览器不允许读剪贴板，请手动粘贴'); return; }
+  try {
+    const t = await navigator.clipboard.readText();
+    if (!t) { toast('剪贴板是空的'); return; }
+    $('dlUri').value = String(t).trim();
+    $('dlUri').focus();
+  } catch (e) { toast('读剪贴板被拒绝，请手动粘贴'); }
+}
+
+async function dlOp(gid, op) {
+  if (!DL.port) { toast('下载器未连接'); return; }
+  const m = { pause: 'aria2.pause', unpause: 'aria2.unpause', remove: 'aria2.remove' }[op];
+  if (!m) return;
+  const r = await dlRpc(DL.port, m, [gid]);
+  toast(r ? ('已' + ({ pause: '暂停', unpause: '继续', remove: '删除' }[op])) : '操作失败（任务可能已结束）');
+  dlRefresh(true);
+}
+
+function dlFillCfg() {
+  const c = DL.cfg || {};
+  if ($('dcDir')) $('dcDir').value = c.dir || '';
+  if ($('dcConc')) $('dcConc').value = c.maxConcurrent == null ? 5 : c.maxConcurrent;
+  if ($('dcSpeed')) $('dcSpeed').value = c.maxSpeed || '';
+  if ($('dcSeed')) $('dcSeed').value = c.seedTime == null ? 0 : c.seedTime;
+  if ($('dcPort')) $('dcPort').value = c.port == null ? 6800 : c.port;
+  if ($('dcAuto')) $('dcAuto').value = c.autoLaunch === false ? '0' : '1';
+  if ($('dcInfo')) $('dcInfo').textContent = '口令 ' + (DL.secret || DL_SECRET_DEF) + ' · 已从服务端读取';
+}
+
+async function dlLoadCfg() {
+  const j = await api('/api/admin/download/config');
+  if (!j.ok) { toast('读取配置失败：' + (j.error || '')); return; }
+  DL.cfg = j.config;
+  dlFillCfg();
+  toast('已还原为当前保存值');
+}
+
+async function dlSaveCfg() {
+  const patch = {
+    dir: String($('dcDir').value || '').trim(),
+    maxConcurrent: parseInt($('dcConc').value, 10) || 5,
+    maxSpeed: String($('dcSpeed').value || '').trim(),
+    seedTime: parseInt($('dcSeed').value, 10) || 0,
+    port: parseInt($('dcPort').value, 10) || 6800,
+    autoLaunch: $('dcAuto').value === '1',
+  };
+  const j = await api('/api/admin/download/config', { method: 'POST', body: JSON.stringify(patch) });
+  if (!j.ok) { toast('保存失败：' + (j.error || (j.needAuth ? '需要登录' : '未知'))); return; }
+  DL.cfg = j.config;
+  dlFillCfg();
+  /* ★ 配置存服务端只是「记住」；真正生效要下发到本机工具。
+   *   没连接就不下发 —— 不要假装成功。 */
+  if (!DL.port) { toast('设置已保存（下载器未连接，连上后生效）'); return; }
+  const opt = {
+    'max-concurrent-downloads': String(j.config.maxConcurrent),
+    'max-overall-download-limit': j.config.maxSpeed || '0',
+    'seed-time': String(j.config.seedTime),
+  };
+  if (j.config.dir) opt.dir = j.config.dir;
+  const r = await dlRpc(DL.port, 'aria2.changeGlobalOption', [opt]);
+  toast(r ? '设置已保存并下发到下载器' : '设置已保存，但下发失败（下载器可能已退出）');
+}
+
+/* 设置页的接口状态：只在需要时探一次（走缓存，不强制重探） */
+async function dlPaintSetState() {
+  const el = $('setDlState');
+  if (!el) return;
+  if (!DL.meta) await dlBootstrap();
+  if (!DL.port) await dlProbe(false);
+  el.innerHTML = DL.port
+    ? '<span class="sd on"></span>已连接 · 端口 ' + DL.port
+    : '<span class="sd off"></span>未接入（本机 6800–6805 无响应）';
+}
+
+/* ═══════════ 启动 ═══════════
+ * ★ v10.91：先打一次 verify 确认「现在到底是谁」，再渲染视图 ——
+ *   否则首屏会因为并发请求先后顺序不同，一会儿绿点一会儿红灯。
+ *   本机回环会直接 via=loopback（不弹登录），线上没会话就落到「未登录 + 横幅」。 */
+(async function bootstrap() {
+  /* 环境徽标：本机回环跑 = 「本机」，其余一律「线上」。
+     为什么不用写死的字：同一个文件既在本机 8123 跑、也在线上容器里跑，
+     写死任何一个都会在另一边说假话（用户反感的正是「页面写着线上、其实连的是本地」）。 */
+  const eb = $('envBadge');
+  if (eb) {
+    const isLocal = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(location.hostname);
+    eb.textContent = isLocal ? '本机' : '线上';
+    if (!isLocal) eb.classList.add('live');
+  }
+  let j = { ok: false };
+  try { j = await api('/api/admin/verify'); } catch (e) { /* 断网时不阻塞页面 */ }
+  ACCT = j.ok
+    ? { on: true, user: j.user || '', via: j.via || 'session' }
+    : { on: false, user: '', via: '' };
+  paintAcct();
+  if (ACCT.on) hideAuth();
+  go((location.hash || '#dash').slice(1));
+  loadSetLog();
+}());
+</script>
+</body>
+</html>
