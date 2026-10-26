@@ -1,6 +1,6 @@
 # GH-GameGather UPSTREAM · 数据服务
 
-> 📚 **本文档属于 GH 系列交接项目。** 总入口（全部 10 个仓库索引、可用性实测、可复制的 AI Agent prompt）：https://github.com/A13612812330/GH-Handover
+> 📚 **本文档属于 GH 系列交接项目。** 总入口（全部 10 个仓库索引、可用性实测、可复制的 AI Agent prompt）：https://github.com/GHZS-Project/GH-Handover
 
 > **`GH-GameGather-APP` 的配套上游服务。** 桌面端（Electron 壳）用它取实时数据；
 > 不给它，App 就只能看离线快照 `demo/data.js`。
