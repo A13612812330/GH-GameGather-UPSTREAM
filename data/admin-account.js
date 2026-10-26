@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 
 const FILE = path.join(__dirname, 'admin-account.json');
-const DEFAULT_USER = 'liyou';
+const DEFAULT_USER = 'ghzs';
 const KEYLEN = 32;
 
 /** scrypt 派生的口令哈希（hex）。salt 每次随机 16 字节。 */
